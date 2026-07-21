@@ -1,6 +1,8 @@
 'use client';
 
 import {useEffect,useMemo,useState} from 'react';
+import AuthGate from '../components/AuthGate';
+import {supabase} from '../lib/supabase';
 
 const KEY='campweight-s2'; // bewusst gleich: vorhandene Sprint-2-Daten bleiben erhalten
 const initial={
@@ -23,7 +25,9 @@ const licenses=[
 ];
 const kg=n=>`${Number(n||0).toLocaleString('de-DE',{minimumFractionDigits:1,maximumFractionDigits:1})} kg`;
 
-export default function Home(){
+export default function Home(){return <AuthGate>{({session,signOut})=><CampWeightApp session={session} signOut={signOut}/>}</AuthGate>}
+
+function CampWeightApp({session,signOut}){
   const [ready,setReady]=useState(false),[tab,setTab]=useState('dashboard');
   const [camper,setCamper]=useState(initial.camper),[tow,setTow]=useState(initial.tow),[license,setLicense]=useState(initial.license),[items,setItems]=useState(initial.items),[trips,setTrips]=useState(initial.trips);
   const [selHome,setSelHome]=useState(''),[selCamper,setSelCamper]=useState(''),[editId,setEditId]=useState(null);
@@ -31,6 +35,8 @@ export default function Home(){
   const [activeTripId,setActiveTripId]=useState('');
   const [tripForm,setTripForm]=useState({name:'',adults:2,children:0,days:7});
   const [importData,setImportData]=useState({fileName:'',headers:[],rows:[],mapping:{name:'',weight:'',owned:'',category:'',position:'',basic:''},error:'',busy:false});
+  const [cloudStatus,setCloudStatus]=useState('lokal');
+  const [cloudCamperId,setCloudCamperId]=useState('');
 
   useEffect(()=>{
     try{
@@ -45,6 +51,37 @@ export default function Home(){
     }catch{}finally{setReady(true)}
   },[]);
   useEffect(()=>{if(ready)localStorage.setItem(KEY,JSON.stringify({camper,tow,license,items,trips}))},[ready,camper,tow,license,items,trips]);
+
+  useEffect(()=>{
+    if(!ready||!session?.user?.id||!supabase)return;
+    let cancelled=false;
+    (async()=>{
+      setCloudStatus('synchronisiert …');
+      const {data,error}=await supabase.from('campers').select('*').eq('owner_id',session.user.id).order('created_at',{ascending:true}).limit(1).maybeSingle();
+      if(cancelled)return;
+      if(error){setCloudStatus('Cloud-Fehler');return}
+      if(data){
+        setCloudCamperId(data.id);
+        setCamper(c=>({...c,mode:data.vehicle_type==='motorhome'?'motorhome':'caravan',name:data.name,baseWeight:Number(data.base_weight_kg),maxWeight:Number(data.max_weight_kg)}));
+        setCloudStatus('Cloud geladen');
+      }else{
+        const {data:created,error:createError}=await supabase.from('campers').insert({owner_id:session.user.id,vehicle_type:camper.mode==='motorhome'?'motorhome':'caravan',name:camper.name,base_weight_kg:Number(camper.baseWeight||0),max_weight_kg:Number(camper.maxWeight||1)}).select('id').single();
+        if(cancelled)return;
+        if(createError)setCloudStatus('Cloud-Fehler');else{setCloudCamperId(created.id);setCloudStatus('Cloud angelegt')}
+      }
+    })();
+    return()=>{cancelled=true};
+  },[ready,session?.user?.id]);
+
+  useEffect(()=>{
+    if(!ready||!cloudCamperId||!supabase)return;
+    const timer=setTimeout(async()=>{
+      setCloudStatus('speichert …');
+      const {error}=await supabase.from('campers').update({vehicle_type:camper.mode==='motorhome'?'motorhome':'caravan',name:camper.name,base_weight_kg:Number(camper.baseWeight||0),max_weight_kg:Number(camper.maxWeight||1)}).eq('id',cloudCamperId);
+      setCloudStatus(error?'Cloud-Fehler':'gespeichert');
+    },700);
+    return()=>clearTimeout(timer);
+  },[ready,cloudCamperId,camper]);
 
   const pack=useMemo(()=>items.reduce((s,i)=>s+Number(i.loaded||0)*Number(i.weight||0),0),[items]);
   const total=Number(camper.baseWeight||0)+pack;
@@ -272,6 +309,8 @@ export default function Home(){
         {camper.mode==='caravan'&&<Card title='Technische Prüfung'><CheckBox result={techCheck}/>{techCheck.details?.map((d,i)=><p className='resultLine' key={i}>{d}</p>)}</Card>}
         <Card title='Hinweis zu alten deutschen Führerscheinklassen'><p className='note'>Bei alten Klassen können Besitzstandsrechte, Umtausch, Schlüsselzahlen, Achszahl sowie Alters-/Gesundheitsvorgaben eine Rolle spielen. CampWeight zeigt deshalb bei komplexen Altklassen bewusst einen Prüfhinweis statt einer pauschalen Freigabe.</p></Card>
       </>}
+
+      <section className='accountBar'><span><b>{session?.user?.email}</b><small>Cloud: {cloudStatus}</small></span><button className='secondary' onClick={signOut}>Abmelden</button></section>
 
       <section className='legal'><b>Rechtlicher Hinweis:</b> Die berechneten Werte und Empfehlungen dienen ausschließlich der Orientierung. Die Verantwortung für ordnungsgemäße Beladung, Fahrerlaubnis, gesetzliche Vorschriften und Verkehrssicherheit liegt beim Fahrzeugführer.</section>
     </main>
