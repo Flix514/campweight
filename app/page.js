@@ -1,4 +1,4 @@
-\'use client\';
+'use client';
 import {useEffect,useMemo,useState} from 'react';
 
 const KEY='campweight-s2';
