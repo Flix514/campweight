@@ -2,6 +2,7 @@
 
 import {useEffect,useMemo,useState} from 'react';
 import AuthGate from '../components/AuthGate';
+import CamperSetupWizard from '../components/CamperSetupWizard';
 import {supabase} from '../lib/supabase';
 
 const KEY='campweight-s2'; // bewusst gleich: vorhandene Sprint-2-Daten bleiben erhalten
@@ -37,6 +38,8 @@ function CampWeightApp({session,signOut}){
   const [importData,setImportData]=useState({fileName:'',headers:[],rows:[],mapping:{name:'',weight:'',owned:'',category:'',position:'',basic:''},error:'',busy:false});
   const [cloudStatus,setCloudStatus]=useState('lokal');
   const [cloudCamperId,setCloudCamperId]=useState('');
+  const [cloudChecked,setCloudChecked]=useState(false);
+  const [needsSetup,setNeedsSetup]=useState(false);
 
   useEffect(()=>{
     try{
@@ -59,15 +62,17 @@ function CampWeightApp({session,signOut}){
       setCloudStatus('synchronisiert …');
       const {data,error}=await supabase.from('campers').select('*').eq('owner_id',session.user.id).order('created_at',{ascending:true}).limit(1).maybeSingle();
       if(cancelled)return;
-      if(error){setCloudStatus('Cloud-Fehler');return}
+      if(error){setCloudStatus('Cloud-Fehler');setCloudChecked(true);return}
       if(data){
         setCloudCamperId(data.id);
-        setCamper(c=>({...c,mode:data.vehicle_type==='motorhome'?'motorhome':'caravan',name:data.name,baseWeight:Number(data.base_weight_kg),maxWeight:Number(data.max_weight_kg)}));
+        setCamper(c=>({...c,mode:data.vehicle_type==='motorhome'?'motorhome':'caravan',name:data.name,manufacturer:data.manufacturer||'',model:data.model||'',modelYear:data.model_year||'',noseWeight:data.max_nose_weight_kg||'',baseWeight:Number(data.base_weight_kg),maxWeight:Number(data.max_weight_kg)}));
+        setNeedsSetup(!data.manufacturer||!data.model||data.name==='Mein Camper');
         setCloudStatus('Cloud geladen');
+        setCloudChecked(true);
       }else{
-        const {data:created,error:createError}=await supabase.from('campers').insert({owner_id:session.user.id,vehicle_type:camper.mode==='motorhome'?'motorhome':'caravan',name:camper.name,base_weight_kg:Number(camper.baseWeight||0),max_weight_kg:Number(camper.maxWeight||1)}).select('id').single();
+        const {data:created,error:createError}=await supabase.from('campers').insert({owner_id:session.user.id,vehicle_type:camper.mode==='motorhome'?'motorhome':'caravan',name:camper.name,manufacturer:camper.manufacturer||null,model:camper.model||null,model_year:camper.modelYear?Number(camper.modelYear):null,max_nose_weight_kg:camper.noseWeight?Number(camper.noseWeight):null,base_weight_kg:Number(camper.baseWeight||0),max_weight_kg:Number(camper.maxWeight||1)}).select('id').single();
         if(cancelled)return;
-        if(createError)setCloudStatus('Cloud-Fehler');else{setCloudCamperId(created.id);setCloudStatus('Cloud angelegt')}
+        if(createError){setCloudStatus('Cloud-Fehler');setCloudChecked(true)}else{setCloudCamperId(created.id);setCloudStatus('Cloud angelegt');setNeedsSetup(true);setCloudChecked(true)}
       }
     })();
     return()=>{cancelled=true};
@@ -77,7 +82,7 @@ function CampWeightApp({session,signOut}){
     if(!ready||!cloudCamperId||!supabase)return;
     const timer=setTimeout(async()=>{
       setCloudStatus('speichert …');
-      const {error}=await supabase.from('campers').update({vehicle_type:camper.mode==='motorhome'?'motorhome':'caravan',name:camper.name,base_weight_kg:Number(camper.baseWeight||0),max_weight_kg:Number(camper.maxWeight||1)}).eq('id',cloudCamperId);
+      const {error}=await supabase.from('campers').update({vehicle_type:camper.mode==='motorhome'?'motorhome':'caravan',name:camper.name,manufacturer:camper.manufacturer||null,model:camper.model||null,model_year:camper.modelYear?Number(camper.modelYear):null,max_nose_weight_kg:camper.noseWeight?Number(camper.noseWeight):null,base_weight_kg:Number(camper.baseWeight||0),max_weight_kg:Number(camper.maxWeight||1)}).eq('id',cloudCamperId);
       setCloudStatus(error?'Cloud-Fehler':'gespeichert');
     },700);
     return()=>clearTimeout(timer);
@@ -183,10 +188,25 @@ function CampWeightApp({session,signOut}){
   function unloadTrip(){setItems(a=>a.map(i=>i.basic?i:{...i,loaded:0}))}
   function planFromCamper(){if(!activeTrip)return;const map={};items.filter(i=>!i.basic).forEach(i=>{map[i.id]=i.loaded});updateTrip(activeTrip.id,{items:map})}
 
+  async function completeSetup(data){
+    const camperPatch={mode:data.mode,name:data.name,manufacturer:data.manufacturer,model:data.model,modelYear:Number(data.year),baseWeight:Number(data.baseWeight),maxWeight:Number(data.maxWeight),noseWeight:data.mode==='caravan'?Number(data.noseWeight):''};
+    const payload={owner_id:session.user.id,vehicle_type:data.mode==='motorhome'?'motorhome':'caravan',name:data.name,manufacturer:data.manufacturer,model:data.model,model_year:Number(data.year),base_weight_kg:Number(data.baseWeight),max_weight_kg:Number(data.maxWeight),max_nose_weight_kg:data.mode==='caravan'?Number(data.noseWeight):null};
+    let id=cloudCamperId;
+    if(id){const {error}=await supabase.from('campers').update(payload).eq('id',id);if(error)throw error}
+    else{const {data:created,error}=await supabase.from('campers').insert(payload).select('id').single();if(error)throw error;id=created.id;setCloudCamperId(id)}
+    if(data.mode==='caravan'&&data.addTow&&data.towName.trim()){
+      const {error}=await supabase.from('tow_vehicles').insert({owner_id:session.user.id,camper_id:id,name:data.towName.trim(),gross_weight_kg:data.towMaxWeight?Number(data.towMaxWeight):null,towing_capacity_braked_kg:data.towBrakedLimit?Number(data.towBrakedLimit):null,nose_weight_limit_kg:data.towNoseLimit?Number(data.towNoseLimit):null});
+      if(error)throw error;
+      setTow(t=>({...t,name:data.towName,maxWeight:data.towMaxWeight,brakedLimit:data.towBrakedLimit,noseLimit:data.towNoseLimit}));
+    }
+    setCamper(c=>({...c,...camperPatch}));setNeedsSetup(false);setCloudStatus('gespeichert');setTab('dashboard');
+  }
+
   const licenseCheck=checkLicense({mode:camper.mode,license:license.class,camperMax:Number(camper.maxWeight||0),towMax:Number(tow.maxWeight||0)});
   const techCheck=checkTechnical({mode:camper.mode,currentTrailerWeight:total,tow,camperMax:Number(camper.maxWeight||0),reserve});
 
-  if(!ready)return <main className='loading'>CampWeight wird geladen …</main>;
+  if(!ready||!cloudChecked)return <main className='loading'>CampWeight wird geladen …</main>;
+  if(needsSetup)return <CamperSetupWizard initialCamper={camper} email={session?.user?.email} signOut={signOut} onComplete={completeSetup}/>;
 
   const nav=[['dashboard','Dashboard'],['camper','Mein Camper'],['inventory','Inventar'],['basic','Grundausstattung'],['trips','Reisen'],['loading','Beladung']];
   if(camper.mode==='caravan')nav.push(['tow','Zugfahrzeug']);
@@ -200,7 +220,7 @@ function CampWeightApp({session,signOut}){
     </aside>
 
     <main className='content'>
-      <header><div><p>CampWeight · Sprint 5</p><h1>{nav.find(n=>n[0]===tab)?.[1]||'CampWeight'}</h1></div><strong className={`status ${reserve<0?'bad':reserve<50?'warn':'ok'}`}>{reserve<0?`${kg(Math.abs(reserve))} zu viel`:`${kg(reserve)} Reserve`}</strong></header>
+      <header><div><p>CampWeight · Version 0.2</p><h1>{nav.find(n=>n[0]===tab)?.[1]||'CampWeight'}</h1></div><strong className={`status ${reserve<0?'bad':reserve<50?'warn':'ok'}`}>{reserve<0?`${kg(Math.abs(reserve))} zu viel`:`${kg(reserve)} Reserve`}</strong></header>
 
       {tab==='dashboard'&&<>
         <section className='stats'><Stat t='Basisgewicht' v={kg(camper.baseWeight)}/><Stat t='Grundausstattung' v={kg(basicWeight)}/><Stat t='Reisegepäck' v={kg(travelWeight)}/><Stat t='Gesamt' v={kg(total)}/></section>
