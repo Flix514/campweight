@@ -1,18 +1,3 @@
-# CampWeight – Sprint 1
+# CampWeight Sprint 2
 
-Erste echte Codebasis.
-
-Enthalten:
-- Wohnwagen-/Wohnmobil-Modus
-- Basisgewicht und zGG
-- Inventar
-- Besitz / Zuhause / Im Camper
-- Grundausstattung
-- +1 / -1 Ein- und Ausladen
-- Alle einladen / Alle ausladen
-- Gewichtsübersicht
-- Rechtlicher Hinweis
-
-Lokal:
-npm install
-npm run dev
+Neu: Navigation, lokale Speicherung, Inventar bearbeiten/löschen, Kategorien, Positionen, Grundausstattung und verbesserte Beladung.
