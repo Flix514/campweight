@@ -7,6 +7,7 @@ const initial={
   camper:{mode:'caravan',name:'Mein Camper',baseWeight:1320,maxWeight:1700},
   tow:{name:'',maxWeight:'',brakedLimit:'',unbrakedLimit:'',noseLimit:'',trailerBraked:true},
   license:{class:'B96'},
+  trips:[],
   items:[
     {id:'1',name:'Campingstuhl',category:'Campingmöbel',weight:3.2,owned:4,loaded:2,position:'Mitte',basic:true},
     {id:'2',name:'Gasflasche 11 kg voll',category:'Gas',weight:22,owned:2,loaded:1,position:'Deichselkasten',basic:true},
@@ -24,9 +25,11 @@ const kg=n=>`${Number(n||0).toLocaleString('de-DE',{minimumFractionDigits:1,maxi
 
 export default function Home(){
   const [ready,setReady]=useState(false),[tab,setTab]=useState('dashboard');
-  const [camper,setCamper]=useState(initial.camper),[tow,setTow]=useState(initial.tow),[license,setLicense]=useState(initial.license),[items,setItems]=useState(initial.items);
+  const [camper,setCamper]=useState(initial.camper),[tow,setTow]=useState(initial.tow),[license,setLicense]=useState(initial.license),[items,setItems]=useState(initial.items),[trips,setTrips]=useState(initial.trips);
   const [selHome,setSelHome]=useState(''),[selCamper,setSelCamper]=useState(''),[editId,setEditId]=useState(null);
   const [form,setForm]=useState({name:'',category:'Sonstiges',weight:'',owned:1,position:'Mitte',basic:false});
+  const [activeTripId,setActiveTripId]=useState('');
+  const [tripForm,setTripForm]=useState({name:'',adults:2,children:0,days:7});
 
   useEffect(()=>{
     try{
@@ -36,10 +39,11 @@ export default function Home(){
         setTow({...initial.tow,...(x.tow||{})});
         setLicense({...initial.license,...(x.license||{})});
         setItems(Array.isArray(x.items)?x.items:initial.items);
+        setTrips(Array.isArray(x.trips)?x.trips:initial.trips);
       }
     }catch{}finally{setReady(true)}
   },[]);
-  useEffect(()=>{if(ready)localStorage.setItem(KEY,JSON.stringify({camper,tow,license,items}))},[ready,camper,tow,license,items]);
+  useEffect(()=>{if(ready)localStorage.setItem(KEY,JSON.stringify({camper,tow,license,items,trips}))},[ready,camper,tow,license,items,trips]);
 
   const pack=useMemo(()=>items.reduce((s,i)=>s+Number(i.loaded||0)*Number(i.weight||0),0),[items]);
   const total=Number(camper.baseWeight||0)+pack;
@@ -48,6 +52,11 @@ export default function Home(){
   const basicWeight=basics.reduce((s,i)=>s+i.loaded*i.weight,0),travelWeight=pack-basicWeight;
   const rearWeight=loaded.filter(i=>['Hinten','Heckträger'].includes(i.position)).reduce((s,i)=>s+i.loaded*i.weight,0);
   const frontWeight=loaded.filter(i=>['Vorne','Deichselkasten'].includes(i.position)).reduce((s,i)=>s+i.loaded*i.weight,0);
+  const activeTrip=trips.find(t=>t.id===activeTripId)||trips[0]||null;
+  const travelItems=items.filter(i=>!i.basic);
+  const plannedTravelWeight=activeTrip?Object.entries(activeTrip.items||{}).reduce((sum,[id,q])=>{const i=items.find(x=>x.id===id);return sum+(i?Number(q||0)*Number(i.weight||0):0)},0):0;
+  const plannedTotal=Number(camper.baseWeight||0)+basicWeight+plannedTravelWeight;
+  const plannedReserve=Number(camper.maxWeight||0)-plannedTotal;
 
   const resetForm=()=>{setEditId(null);setForm({name:'',category:'Sonstiges',weight:'',owned:1,position:'Mitte',basic:false})};
   function saveItem(){
@@ -64,12 +73,26 @@ export default function Home(){
   function loadEverything(){setItems(a=>a.map(i=>({...i,loaded:i.owned})))}
   function unloadTravel(){setItems(a=>a.map(i=>({...i,loaded:i.basic?Math.min(i.owned,Math.max(1,i.loaded)):0})))}
 
+  function createTrip(){
+    const name=tripForm.name.trim();
+    if(!name){alert('Bitte einen Reisenamen eintragen.');return}
+    const trip={id:String(Date.now()),name,adults:Math.max(0,Number(tripForm.adults||0)),children:Math.max(0,Number(tripForm.children||0)),days:Math.max(1,Number(tripForm.days||1)),items:{}};
+    setTrips(a=>[...a,trip]);setActiveTripId(trip.id);setTripForm({name:'',adults:2,children:0,days:7});
+  }
+  function updateTrip(id,patch){setTrips(a=>a.map(t=>t.id===id?{...t,...patch}:t))}
+  function setTripQty(itemId,value){if(!activeTrip)return;const item=items.find(i=>i.id===itemId);if(!item)return;const q=Math.max(0,Math.min(item.owned,Number(value||0)));setTrips(a=>a.map(t=>t.id===activeTrip.id?{...t,items:{...(t.items||{}),[itemId]:q}}:t))}
+  function deleteTrip(id){const t=trips.find(x=>x.id===id);if(t&&confirm(`Reise „${t.name}“ wirklich löschen?`)){setTrips(a=>a.filter(x=>x.id!==id));if(activeTripId===id)setActiveTripId('')}}
+  function duplicateTrip(id){const t=trips.find(x=>x.id===id);if(!t)return;const copy={...t,id:String(Date.now()),name:`${t.name} – Kopie`,items:{...(t.items||{})}};setTrips(a=>[...a,copy]);setActiveTripId(copy.id)}
+  function loadTrip(){if(!activeTrip)return;setItems(a=>a.map(i=>i.basic?i:{...i,loaded:Math.max(0,Math.min(i.owned,Number(activeTrip.items?.[i.id]||0))) }))}
+  function unloadTrip(){setItems(a=>a.map(i=>i.basic?i:{...i,loaded:0}))}
+  function planFromCamper(){if(!activeTrip)return;const map={};items.filter(i=>!i.basic).forEach(i=>{map[i.id]=i.loaded});updateTrip(activeTrip.id,{items:map})}
+
   const licenseCheck=checkLicense({mode:camper.mode,license:license.class,camperMax:Number(camper.maxWeight||0),towMax:Number(tow.maxWeight||0)});
   const techCheck=checkTechnical({mode:camper.mode,currentTrailerWeight:total,tow,camperMax:Number(camper.maxWeight||0),reserve});
 
   if(!ready)return <main className='loading'>CampWeight wird geladen …</main>;
 
-  const nav=[['dashboard','Dashboard'],['camper','Mein Camper'],['inventory','Inventar'],['basic','Grundausstattung'],['loading','Beladung']];
+  const nav=[['dashboard','Dashboard'],['camper','Mein Camper'],['inventory','Inventar'],['basic','Grundausstattung'],['trips','Reisen'],['loading','Beladung']];
   if(camper.mode==='caravan')nav.push(['tow','Zugfahrzeug']);
   nav.push(['license','Führerschein-Check']);
 
@@ -81,7 +104,7 @@ export default function Home(){
     </aside>
 
     <main className='content'>
-      <header><div><p>CampWeight · Sprint 3</p><h1>{nav.find(n=>n[0]===tab)?.[1]||'CampWeight'}</h1></div><strong className={`status ${reserve<0?'bad':reserve<50?'warn':'ok'}`}>{reserve<0?`${kg(Math.abs(reserve))} zu viel`:`${kg(reserve)} Reserve`}</strong></header>
+      <header><div><p>CampWeight · Sprint 4</p><h1>{nav.find(n=>n[0]===tab)?.[1]||'CampWeight'}</h1></div><strong className={`status ${reserve<0?'bad':reserve<50?'warn':'ok'}`}>{reserve<0?`${kg(Math.abs(reserve))} zu viel`:`${kg(reserve)} Reserve`}</strong></header>
 
       {tab==='dashboard'&&<>
         <section className='stats'><Stat t='Basisgewicht' v={kg(camper.baseWeight)}/><Stat t='Grundausstattung' v={kg(basicWeight)}/><Stat t='Reisegepäck' v={kg(travelWeight)}/><Stat t='Gesamt' v={kg(total)}/></section>
@@ -93,6 +116,10 @@ export default function Home(){
           <Card title='Beladungsverteilung'><p className='row'><span>Vorne / Deichselkasten</span><b>{kg(frontWeight)}</b></p><p className='row'><span>Hinten / Heckträger</span><b>{kg(rearWeight)}</b></p><div className={`hint ${rearWeight>frontWeight+25?'hintWarn':''}`}>{rearWeight>frontWeight+25?'Viel Gewicht liegt hinten. Das kann die Stützlast reduzieren. Die tatsächliche Stützlast bitte messen.':'Die grobe Verteilung wirkt unauffällig. Die tatsächliche Stützlast bitte trotzdem messen.'}</div></Card>
           <Card title='Aktueller Camper'><h3>{camper.name}</h3><p>{camper.mode==='caravan'?'Wohnwagen / Gespann':'Wohnmobil'}</p><button onClick={()=>setTab('camper')}>Bearbeiten</button></Card>
         </section>}
+        <section className='two'>
+          <Card title='Reisen & Packlisten'><p><b>{trips.length}</b> gespeicherte Reise{trips.length===1?'':'n'}.</p>{activeTrip?<><p className='row'><span>Aktiv</span><b>{activeTrip.name}</b></p><p className='row'><span>Geplantes Gesamtgewicht</span><b>{kg(plannedTotal)}</b></p><p className='row'><span>Geplante Reserve</span><b>{kg(plannedReserve)}</b></p></>:<p>Noch keine Reise angelegt.</p>}<button onClick={()=>setTab('trips')}>Reisen planen</button></Card>
+          <Card title='Packstatus'><p className='row'><span>Grundausstattung</span><b>{kg(basicWeight)}</b></p><p className='row'><span>Aktuelles Reisegepäck</span><b>{kg(travelWeight)}</b></p><p className='row'><span>Packstücke im Camper</span><b>{loaded.reduce((sum,i)=>sum+i.loaded,0)}</b></p></Card>
+        </section>
       </>}
 
       {tab==='camper'&&<Card title='Mein Camper'>
@@ -106,6 +133,47 @@ export default function Home(){
       {tab==='inventory'&&<><Card title={editId?'Produkt bearbeiten':'Inventar-Produkt hinzufügen'}><div className='form'>{[['Produktname','name'],['Gewicht/Stück (kg)','weight'],['Besitz','owned']].map(([l,k])=><label key={k}>{l}<input type={k==='name'?'text':'number'} step={k==='weight'?'0.01':'1'} value={form[k]} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))}/></label>)}<label>Kategorie<select value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))}>{cats.map(x=><option key={x}>{x}</option>)}</select></label><label>Position<select value={form.position} onChange={e=>setForm(f=>({...f,position:e.target.value}))}>{pos.map(x=><option key={x}>{x}</option>)}</select></label></div><label className='check'><input type='checkbox' checked={form.basic} onChange={e=>setForm(f=>({...f,basic:e.target.checked}))}/> Grundausstattung</label><div className='buttons'><button onClick={saveItem}>{editId?'Speichern':'Hinzufügen'}</button>{editId&&<button className='secondary' onClick={resetForm}>Abbrechen</button>}</div></Card><Card title='Mein Inventar'><Table items={items} edit={edit} del={del}/></Card></>}
 
       {tab==='basic'&&<Card title='Camper-Grundausstattung'>{basics.length?<Table items={basics} edit={edit} del={del}/>:<p>Noch keine Grundausstattung markiert.</p>}</Card>}
+
+      {tab==='trips'&&<>
+        <Card title='Neue Reise anlegen'>
+          <div className='tripForm'>
+            <label>Reisename<input value={tripForm.name} onChange={e=>setTripForm(f=>({...f,name:e.target.value}))} placeholder='z. B. Zeeland Sommerurlaub 2027'/></label>
+            <label>Erwachsene<input type='number' min='0' value={tripForm.adults} onChange={e=>setTripForm(f=>({...f,adults:e.target.value}))}/></label>
+            <label>Kinder<input type='number' min='0' value={tripForm.children} onChange={e=>setTripForm(f=>({...f,children:e.target.value}))}/></label>
+            <label>Tage<input type='number' min='1' value={tripForm.days} onChange={e=>setTripForm(f=>({...f,days:e.target.value}))}/></label>
+          </div>
+          <button onClick={createTrip}>Reise anlegen</button>
+        </Card>
+
+        <Card title='Gespeicherte Reisen'>
+          {trips.length===0?<p>Noch keine Reise gespeichert.</p>:<div className='tripCards'>{trips.map(t=><button key={t.id} className={`tripCard ${activeTrip?.id===t.id?'selectedTrip':''}`} onClick={()=>setActiveTripId(t.id)}><b>{t.name}</b><span>{t.adults} Erw. · {t.children} Kinder · {t.days} Tage</span></button>)}</div>}
+        </Card>
+
+        {activeTrip&&<>
+          <Card title={`Reise planen: ${activeTrip.name}`}>
+            <div className='tripMeta'>
+              <label>Name<input value={activeTrip.name} onChange={e=>updateTrip(activeTrip.id,{name:e.target.value})}/></label>
+              <label>Erwachsene<input type='number' min='0' value={activeTrip.adults} onChange={e=>updateTrip(activeTrip.id,{adults:Math.max(0,Number(e.target.value||0))})}/></label>
+              <label>Kinder<input type='number' min='0' value={activeTrip.children} onChange={e=>updateTrip(activeTrip.id,{children:Math.max(0,Number(e.target.value||0))})}/></label>
+              <label>Tage<input type='number' min='1' value={activeTrip.days} onChange={e=>updateTrip(activeTrip.id,{days:Math.max(1,Number(e.target.value||1))})}/></label>
+            </div>
+            <div className='buttons tripActions'><button onClick={planFromCamper}>Aktuellen Camper als Plan übernehmen</button><button className='secondary' onClick={()=>duplicateTrip(activeTrip.id)}>Reise kopieren</button><button className='danger' onClick={()=>deleteTrip(activeTrip.id)}>Reise löschen</button></div>
+            <div className='hint'>Grundausstattung wird automatisch in der aktuell im Camper vorgesehenen Menge berücksichtigt. Hier planst du nur das variable Reisegepäck.</div>
+          </Card>
+
+          <Card title='Reisegepäck planen'>
+            {travelItems.length===0?<p>Noch keine variablen Inventar-Produkte vorhanden.</p>:<div className='table tripTable'><table><thead><tr><th>Produkt</th><th>Kategorie</th><th>Gewicht/Stück</th><th>Besitz</th><th>Geplante Menge</th><th>Geplantes Gewicht</th></tr></thead><tbody>{travelItems.map(i=>{const q=Number(activeTrip.items?.[i.id]||0);return <tr key={i.id}><td><b>{i.name}</b></td><td>{i.category}</td><td>{kg(i.weight)}</td><td>{i.owned}</td><td><input className='qtyInput' type='number' min='0' max={i.owned} value={q} onChange={e=>setTripQty(i.id,e.target.value)}/></td><td>{kg(q*i.weight)}</td></tr>})}</tbody></table></div>}
+          </Card>
+
+          <section className='stats'><Stat t='Basisgewicht' v={kg(camper.baseWeight)}/><Stat t='Grundausstattung' v={kg(basicWeight)}/><Stat t='Reisegepäck geplant' v={kg(plannedTravelWeight)}/><Stat t='Geplant gesamt' v={kg(plannedTotal)}/></section>
+          <Card title='Gewichtsprognose'>
+            <Progress total={plannedTotal} max={camper.maxWeight}/>
+            <p className='row'><span>zGG</span><b>{kg(camper.maxWeight)}</b></p><p className='row'><span>Geplant</span><b>{kg(plannedTotal)}</b></p><p className='row'><span>Reserve</span><b className={plannedReserve<0?'textBad':''}>{kg(plannedReserve)}</b></p>
+            <div className={`hint ${plannedReserve<0?'hintDanger':plannedReserve<50?'hintWarn':''}`}>{plannedReserve<0?`Die geplante Reise überschreitet das zGG um ${kg(Math.abs(plannedReserve))}. Bitte Mengen reduzieren oder Gewicht optimieren.`:plannedReserve<50?`Nur noch ${kg(plannedReserve)} Reserve in der Planung. Ein zusätzlicher Puffer wäre sinnvoll.`:`Die Reiseplanung liegt aktuell mit ${kg(plannedReserve)} Reserve innerhalb des zGG.`}</div>
+            <div className='buttons tripActions'><button onClick={loadTrip}>Reise in Camper laden</button><button className='secondary' onClick={unloadTrip}>Reise ausladen</button><button onClick={()=>setTab('loading')}>Beladung prüfen</button></div>
+          </Card>
+        </>}
+      </>}
 
       {tab==='loading'&&<><Card title='Camper beladen'><div className='topButtons'><button onClick={loadEverything}>Alles einladen</button><button className='secondary' onClick={unloadTravel}>Reisegepäck ausladen</button></div><div className='dual'><div><h3>Zuhause / verfügbar</h3><select size='12' value={selHome} onChange={e=>setSelHome(e.target.value)}>{home.map(i=><option key={i.id} value={i.id}>{i.name} · zuhause {i.owned-i.loaded}/{i.owned}</option>)}</select></div><div className='arrows'><button onClick={()=>selHome&&qty(selHome,1)}>1 →</button><button onClick={()=>selHome&&setAll(selHome,true)}>Alle →</button><button className='secondary' onClick={()=>selCamper&&qty(selCamper,-1)}>← 1</button><button className='secondary' onClick={()=>selCamper&&setAll(selCamper,false)}>← Alle</button></div><div><h3>Im Camper</h3><select size='12' value={selCamper} onChange={e=>setSelCamper(e.target.value)}>{loaded.map(i=><option key={i.id} value={i.id}>{i.loaded}× {i.name} · {kg(i.loaded*i.weight)} · {i.position}</option>)}</select></div></div></Card><section className='stats'><Stat t='Packgewicht' v={kg(pack)}/><Stat t='Gesamtgewicht' v={kg(total)}/><Stat t='Reserve' v={kg(reserve)}/><Stat t='Im Camper' v={`${loaded.reduce((s,i)=>s+i.loaded,0)} Stück`}/></section></>}
 
