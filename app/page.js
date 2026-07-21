@@ -98,7 +98,7 @@ export default function Home(){
 
   return <div className='shell'>
     <aside>
-      <div className='brand'><b>CampWeight</b><span>Pack smart. Travel safe.</span></div>
+      <div className='brand'><img className='brandLogo' src='/campweight-logo.png' alt='CampWeight – Pack smart. Travel safe.'/></div>
       <nav>{nav.map(([id,l])=><button key={id} className={tab===id?'active':''} onClick={()=>setTab(id)}>{l}</button>)}</nav>
       <small>Lokale Testversion · automatische Speicherung</small>
     </aside>
