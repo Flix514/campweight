@@ -6,3 +6,7 @@
 .brand{display:flex!important;align-items:center!important;justify-content:center!important;padding:4px 4px 22px!important}
 .brandLogo{display:block;width:100%;max-width:205px;height:auto;object-fit:contain;background:#fff;border-radius:16px;padding:7px;box-shadow:0 8px 22px rgba(0,0,0,.12)}
 @media(max-width:900px){.brandLogo{max-width:220px}.brand{justify-content:flex-start!important}}
+
+
+/* Sprint 5: Excel-/CSV-Import */
+.fileUpload{display:inline-flex;align-items:center;margin:8px 0 14px;background:var(--navy);color:#fff;border-radius:11px;padding:11px 15px;cursor:pointer;font-weight:800}.fileUpload input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}.fileUpload:has(input:disabled){opacity:.6;cursor:wait}.importSummary{display:flex;flex-direction:column;gap:4px;background:#f7faf9;border:1px solid var(--line);border-radius:12px;padding:13px;margin:8px 0 16px}.importSummary span{font-size:13px;color:var(--muted)}.importMap{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}.importPreview{margin:14px 0}.importPreview table{min-width:820px}.importPreview td:first-child{font-size:18px;font-weight:900;color:var(--green)}@media(max-width:980px){.importMap{grid-template-columns:repeat(2,1fr)}}@media(max-width:700px){.importMap{grid-template-columns:1fr}}

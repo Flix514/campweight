@@ -30,6 +30,7 @@ export default function Home(){
   const [form,setForm]=useState({name:'',category:'Sonstiges',weight:'',owned:1,position:'Mitte',basic:false});
   const [activeTripId,setActiveTripId]=useState('');
   const [tripForm,setTripForm]=useState({name:'',adults:2,children:0,days:7});
+  const [importData,setImportData]=useState({fileName:'',headers:[],rows:[],mapping:{name:'',weight:'',owned:'',category:'',position:'',basic:''},error:'',busy:false});
 
   useEffect(()=>{
     try{
@@ -73,6 +74,64 @@ export default function Home(){
   function loadEverything(){setItems(a=>a.map(i=>({...i,loaded:i.owned})))}
   function unloadTravel(){setItems(a=>a.map(i=>({...i,loaded:i.basic?Math.min(i.owned,Math.max(1,i.loaded)):0})))}
 
+  const importFields=[
+    ['name','Produktname (Pflicht)'],['weight','Gewicht/Stück in kg (Pflicht)'],['owned','Menge / Besitz'],
+    ['category','Kategorie'],['position','Position'],['basic','Grundausstattung']
+  ];
+  function normalizeHeader(v){return String(v??'').trim().toLowerCase().replace(/[ä]/g,'ae').replace(/[ö]/g,'oe').replace(/[ü]/g,'ue').replace(/ß/g,'ss').replace(/[^a-z0-9]+/g,' ')}
+  function guessMapping(headers){
+    const aliases={
+      name:['artikel','artikelname','produkt','produktname','bezeichnung','gegenstand','item','name'],
+      weight:['gewicht','gewicht kg','gewicht in kg','gewicht stueck','gewicht pro stueck','einzelgewicht','weight','kg'],
+      owned:['menge','anzahl','stueck','stueckzahl','besitz','quantity','qty'],
+      category:['kategorie','category','gruppe','warengruppe'],
+      position:['position','packposition','lagerort','ort','beladungsort'],
+      basic:['grundausstattung','basis','standard','immer dabei','basic']
+    };
+    const norm=headers.map(h=>normalizeHeader(h));
+    const result={name:'',weight:'',owned:'',category:'',position:'',basic:''};
+    Object.entries(aliases).forEach(([field,names])=>{
+      let idx=norm.findIndex(h=>names.includes(h));
+      if(idx<0)idx=norm.findIndex(h=>names.some(a=>h.includes(a)));
+      if(idx>=0)result[field]=String(idx);
+    });
+    return result;
+  }
+  function loadSheetJS(){
+    if(window.XLSX)return Promise.resolve(window.XLSX);
+    return new Promise((resolve,reject)=>{
+      const existing=document.querySelector('script[data-campweight-xlsx]');
+      if(existing){existing.addEventListener('load',()=>resolve(window.XLSX),{once:true});existing.addEventListener('error',()=>reject(new Error('Excel-Modul konnte nicht geladen werden.')),{once:true});return}
+      const script=document.createElement('script');script.src='https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';script.async=true;script.dataset.campweightXlsx='1';script.onload=()=>resolve(window.XLSX);script.onerror=()=>reject(new Error('Excel-Modul konnte nicht geladen werden.'));document.head.appendChild(script);
+    })
+  }
+  async function handleImportFile(e){
+    const file=e.target.files?.[0];if(!file)return;
+    setImportData(d=>({...d,fileName:file.name,headers:[],rows:[],error:'',busy:true}));
+    try{
+      const XLSX=await loadSheetJS();const buffer=await file.arrayBuffer();const wb=XLSX.read(buffer,{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];
+      const matrix=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:false,blankrows:false});
+      if(!matrix.length)throw new Error('Die Datei enthält keine lesbaren Daten.');
+      let headerIndex=matrix.findIndex(row=>Array.isArray(row)&&row.filter(v=>String(v).trim()!=='').length>=2);if(headerIndex<0)headerIndex=0;
+      const width=Math.max(...matrix.slice(headerIndex,Math.min(matrix.length,headerIndex+20)).map(r=>r.length),0);
+      const headers=Array.from({length:width},(_,i)=>String(matrix[headerIndex]?.[i]??'').trim()||`Spalte ${i+1}`);
+      const rows=matrix.slice(headerIndex+1).filter(r=>r.some(v=>String(v).trim()!==''));
+      if(!rows.length)throw new Error('Unter der erkannten Kopfzeile wurden keine Daten gefunden.');
+      setImportData({fileName:file.name,headers,rows,mapping:guessMapping(headers),error:'',busy:false});
+    }catch(err){setImportData(d=>({...d,headers:[],rows:[],error:err?.message||'Datei konnte nicht gelesen werden.',busy:false}))}
+    e.target.value='';
+  }
+  function importCell(row,field){const idx=Number(importData.mapping[field]);return importData.mapping[field]===''?'':row[idx]}
+  function parseImportNumber(v){if(typeof v==='number')return v;let x=String(v??'').trim().replace(/\s/g,'').replace(/kg$/i,'');if(x.includes(',')&&x.includes('.'))x=x.lastIndexOf(',')>x.lastIndexOf('.')?x.replace(/\./g,'').replace(',','.'):x.replace(/,/g,'');else x=x.replace(',','.');return Number(x)}
+  function parseImportBool(v){const x=normalizeHeader(v);return ['ja','j','yes','true','1','x','grundausstattung','standard'].includes(x)}
+  function mappedImportRows(){return importData.rows.map((row,index)=>{const name=String(importCell(row,'name')??'').trim();const weight=parseImportNumber(importCell(row,'weight'));const ownedRaw=parseImportNumber(importCell(row,'owned'));const owned=Number.isFinite(ownedRaw)&&ownedRaw>0?Math.max(1,Math.round(ownedRaw)):1;const cat=String(importCell(row,'category')??'').trim();const position=String(importCell(row,'position')??'').trim();const basic=parseImportBool(importCell(row,'basic'));return {index:index+2,name,weight,owned,category:cats.includes(cat)?cat:'Sonstiges',position:pos.includes(position)?position:'Mitte',basic,valid:Boolean(name)&&Number.isFinite(weight)&&weight>0}})}
+  function confirmImport(){
+    if(importData.mapping.name===''||importData.mapping.weight===''){alert('Bitte mindestens Produktname und Gewicht einer Excel-Spalte zuordnen.');return}
+    const parsed=mappedImportRows(),valid=parsed.filter(r=>r.valid);if(!valid.length){alert('Es wurden keine gültigen Artikel mit Name und Gewicht gefunden.');return}
+    const stamp=Date.now();setItems(a=>[...a,...valid.map((r,i)=>({id:`import-${stamp}-${i}`,...r,loaded:r.basic?r.owned:0}))]);
+    const skipped=parsed.length-valid.length;alert(`${valid.length} Artikel importiert${skipped?`. ${skipped} Zeile(n) ohne gültigen Namen/Gewicht wurden übersprungen.`:'.'}`);setImportData({fileName:'',headers:[],rows:[],mapping:{name:'',weight:'',owned:'',category:'',position:'',basic:''},error:'',busy:false});
+  }
+
   function createTrip(){
     const name=tripForm.name.trim();
     if(!name){alert('Bitte einen Reisenamen eintragen.');return}
@@ -104,7 +163,7 @@ export default function Home(){
     </aside>
 
     <main className='content'>
-      <header><div><p>CampWeight · Sprint 4</p><h1>{nav.find(n=>n[0]===tab)?.[1]||'CampWeight'}</h1></div><strong className={`status ${reserve<0?'bad':reserve<50?'warn':'ok'}`}>{reserve<0?`${kg(Math.abs(reserve))} zu viel`:`${kg(reserve)} Reserve`}</strong></header>
+      <header><div><p>CampWeight · Sprint 5</p><h1>{nav.find(n=>n[0]===tab)?.[1]||'CampWeight'}</h1></div><strong className={`status ${reserve<0?'bad':reserve<50?'warn':'ok'}`}>{reserve<0?`${kg(Math.abs(reserve))} zu viel`:`${kg(reserve)} Reserve`}</strong></header>
 
       {tab==='dashboard'&&<>
         <section className='stats'><Stat t='Basisgewicht' v={kg(camper.baseWeight)}/><Stat t='Grundausstattung' v={kg(basicWeight)}/><Stat t='Reisegepäck' v={kg(travelWeight)}/><Stat t='Gesamt' v={kg(total)}/></section>
@@ -130,7 +189,20 @@ export default function Home(){
         {camper.mode==='caravan'?<div className='hint'>Wohnwagenmodus aktiv: Zugfahrzeug, Anhängelast, Stützlast und Gespann-Führerscheinprüfung werden berücksichtigt.</div>:<div className='hint'>Wohnmobilmodus aktiv: Zugfahrzeug-, Anhängelast- und Stützlastthemen sind ausgeblendet. Der Führerschein-Check bewertet nur das zGG des Wohnmobils.</div>}
       </Card>}
 
-      {tab==='inventory'&&<><Card title={editId?'Produkt bearbeiten':'Inventar-Produkt hinzufügen'}><div className='form'>{[['Produktname','name'],['Gewicht/Stück (kg)','weight'],['Besitz','owned']].map(([l,k])=><label key={k}>{l}<input type={k==='name'?'text':'number'} step={k==='weight'?'0.01':'1'} value={form[k]} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))}/></label>)}<label>Kategorie<select value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))}>{cats.map(x=><option key={x}>{x}</option>)}</select></label><label>Position<select value={form.position} onChange={e=>setForm(f=>({...f,position:e.target.value}))}>{pos.map(x=><option key={x}>{x}</option>)}</select></label></div><label className='check'><input type='checkbox' checked={form.basic} onChange={e=>setForm(f=>({...f,basic:e.target.checked}))}/> Grundausstattung</label><div className='buttons'><button onClick={saveItem}>{editId?'Speichern':'Hinzufügen'}</button>{editId&&<button className='secondary' onClick={resetForm}>Abbrechen</button>}</div></Card><Card title='Mein Inventar'><Table items={items} edit={edit} del={del}/></Card></>}
+      {tab==='inventory'&&<>
+        <Card title='Packliste aus Excel oder CSV importieren'>
+          <p className='note'>Du hast deine Packliste bereits in Excel? Lade eine .xlsx-, .xls- oder .csv-Datei hoch. Die Datei wird direkt in deinem Browser gelesen; anschließend kannst du die Spalten CampWeight zuordnen und den Import prüfen.</p>
+          <label className='fileUpload'><span>{importData.busy?'Datei wird gelesen …':'Excel-/CSV-Datei auswählen'}</span><input type='file' accept='.xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv' onChange={handleImportFile} disabled={importData.busy}/></label>
+          {importData.error&&<div className='hint hintDanger'>{importData.error}</div>}
+          {importData.rows.length>0&&<>
+            <div className='importSummary'><b>{importData.fileName}</b><span>{importData.rows.length} Datenzeilen erkannt · erstes Tabellenblatt</span></div>
+            <h3>Spalten zuordnen</h3>
+            <div className='importMap'>{importFields.map(([field,label])=><label key={field}>{label}<select value={importData.mapping[field]} onChange={e=>setImportData(d=>({...d,mapping:{...d.mapping,[field]:e.target.value}}))}><option value=''>Nicht importieren</option>{importData.headers.map((h,i)=><option key={i} value={String(i)}>{h}</option>)}</select></label>)}</div>
+            {(()=>{const preview=mappedImportRows();const valid=preview.filter(r=>r.valid).length;return <><div className={`hint ${valid===0?'hintDanger':''}`}><b>{valid} von {preview.length}</b> Zeilen können importiert werden. Pflichtfelder sind Produktname und ein Gewicht größer 0. Fehlende Kategorie wird „Sonstiges“, fehlende Position „Mitte“, fehlende Menge 1.</div><div className='table importPreview'><table><thead><tr><th>Status</th><th>Produkt</th><th>Gewicht</th><th>Menge</th><th>Kategorie</th><th>Position</th><th>Grundausstattung</th></tr></thead><tbody>{preview.slice(0,8).map(r=><tr key={r.index}><td>{r.valid?'✓':'⚠'}</td><td>{r.name||'—'}</td><td>{Number.isFinite(r.weight)?kg(r.weight):'ungültig'}</td><td>{r.owned}</td><td>{r.category}</td><td>{r.position}</td><td>{r.basic?'Ja':'Nein'}</td></tr>)}</tbody></table></div>{preview.length>8&&<p className='note'>Vorschau zeigt die ersten 8 von {preview.length} Zeilen.</p>}<div className='buttons'><button onClick={confirmImport} disabled={valid===0}>Gültige Artikel importieren</button><button className='secondary' onClick={()=>setImportData({fileName:'',headers:[],rows:[],mapping:{name:'',weight:'',owned:'',category:'',position:'',basic:''},error:'',busy:false})}>Import verwerfen</button></div></>})()}
+          </>}
+        </Card>
+        <Card title={editId?'Produkt bearbeiten':'Inventar-Produkt manuell hinzufügen'}><div className='form'>{[['Produktname','name'],['Gewicht/Stück (kg)','weight'],['Besitz','owned']].map(([l,k])=><label key={k}>{l}<input type={k==='name'?'text':'number'} step={k==='weight'?'0.01':'1'} value={form[k]} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))}/></label>)}<label>Kategorie<select value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))}>{cats.map(x=><option key={x}>{x}</option>)}</select></label><label>Position<select value={form.position} onChange={e=>setForm(f=>({...f,position:e.target.value}))}>{pos.map(x=><option key={x}>{x}</option>)}</select></label></div><label className='check'><input type='checkbox' checked={form.basic} onChange={e=>setForm(f=>({...f,basic:e.target.checked}))}/> Grundausstattung</label><div className='buttons'><button onClick={saveItem}>{editId?'Speichern':'Hinzufügen'}</button>{editId&&<button className='secondary' onClick={resetForm}>Abbrechen</button>}</div></Card><Card title='Mein Inventar'><Table items={items} edit={edit} del={del}/></Card>
+      </>}
 
       {tab==='basic'&&<Card title='Camper-Grundausstattung'>{basics.length?<Table items={basics} edit={edit} del={del}/>:<p>Noch keine Grundausstattung markiert.</p>}</Card>}
 
