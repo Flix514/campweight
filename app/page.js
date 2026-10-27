@@ -25,6 +25,18 @@ const licenses=[
   ['B','B'],['B96','B96'],['BE','BE'],['C1','C1'],['C1E','C1E'],['C','C'],['CE','CE'],
   ['old3','Klasse 3 (alt)'],['old2','Klasse 2 (alt)'],['old1','Klasse 1 (alt)'],['old4','Klasse 4 (alt)'],['old5','Klasse 5 (alt)']
 ];
+const positionToDb={
+  'Deichselkasten':'drawbar_box',
+  'Vorne':'front',
+  'Mitte':'middle',
+  'Hinten':'rear',
+  'Heckträger':'rear_rack',
+  'Zugfahrzeug':'tow_vehicle'
+};
+
+const positionFromDb=Object.fromEntries(
+  Object.entries(positionToDb).map(([de,en])=>[en,de])
+);
 const uuid=()=>crypto.randomUUID();
 const kg=n=>`${Number(n||0).toLocaleString('de-DE',{minimumFractionDigits:1,maximumFractionDigits:1})} kg`;
 
@@ -98,7 +110,7 @@ function CampWeightApp({session,signOut}){
         const migrateItems=cloudItems.length===0&&localItems.some(i=>!['1','2','3'].includes(String(i.id)));
         const migrateTrips=cloudTrips.length===0&&localTrips.length>0;
         const idMap={};
-        const mappedItems=migrateItems?localItems.map(i=>{const newId=uuid();idMap[i.id]=newId;return {...i,id:newId}}):cloudItems.map(i=>({id:i.id,name:i.name,category:i.category||'Sonstiges',weight:Number(i.weight_per_unit_kg),owned:i.owned_quantity,loaded:i.loaded_quantity,position:i.loading_position||'Mitte',basic:i.equipment_type==='basic'}));
+        const mappedItems=migrateItems?localItems.map(i=>{const newId=uuid();idMap[i.id]=newId;return {...i,id:newId}}):cloudItems.map(i=>({id:i.id,name:i.name,category:i.category||'Sonstiges',weight:Number(i.weight_per_unit_kg),owned:i.owned_quantity,loaded:i.loaded_quantity,position:positionFromDb[i.loading_position]||'Mitte',basic:i.equipment_type==='basic'}));
         const mappedTrips=migrateTrips?localTrips.map(t=>({ ...t,id:uuid(),items:Object.fromEntries(Object.entries(t.items||{}).map(([oldId,q])=>[idMap[oldId]||oldId,q]))})):cloudTrips.map(t=>({id:t.id,name:t.name,adults:t.adults_count,children:t.children_count,days:t.days||7,items:t.items||{}}));
         const loadedTow=cloudTow?{name:cloudTow.name,maxWeight:cloudTow.gross_weight_kg??'',brakedLimit:cloudTow.towing_capacity_braked_kg??'',unbrakedLimit:cloudTow.towing_capacity_unbraked_kg??'',noseLimit:cloudTow.nose_weight_limit_kg??'',trailerBraked:true}:local?.tow||initial.tow;
         const loadedLicense={class:cloudTow?.licence_class||local?.license?.class||'B96'};
@@ -128,7 +140,7 @@ function CampWeightApp({session,signOut}){
         setCloudStatus('speichert …');
         const {error:camperError}=await supabase.from('campers').update({vehicle_type:camper.mode==='motorhome'?'motorhome':'caravan',name:camper.name,manufacturer:camper.manufacturer||null,model:camper.model||null,model_year:camper.modelYear?Number(camper.modelYear):null,max_nose_weight_kg:camper.noseWeight?Number(camper.noseWeight):null,base_weight_kg:Number(camper.baseWeight||0),max_weight_kg:Number(camper.maxWeight||1)}).eq('id',camperId).eq('owner_id',userId);
         if(camperError)throw camperError;
-        const itemRows=items.map(i=>({id:i.id,owner_id:userId,camper_id:camperId,name:i.name,category:i.category,weight_per_unit_kg:Number(i.weight),owned_quantity:Number(i.owned),loaded_quantity:Number(i.loaded),loading_position:i.position,equipment_type:i.basic?'basic':'trip'}));
+        const itemRows=items.map(i=>({id:i.id,owner_id:userId,camper_id:camperId,name:i.name,category:i.category,weight_per_unit_kg:Number(i.weight),owned_quantity:Number(i.owned),loaded_quantity:Number(i.loaded),loading_position:positionToDb[i.position]||'middle',equipment_type:i.basic?'basic':'trip'}));
         if(itemRows.length){const {error}=await supabase.from('inventory_items').upsert(itemRows,{onConflict:'id'});if(error)throw error}
         const removedItems=cloudItemIds.current.filter(id=>!items.some(i=>i.id===id));
         if(removedItems.length){const {error}=await supabase.from('inventory_items').delete().eq('owner_id',userId).eq('camper_id',camperId).in('id',removedItems);if(error)throw error}
