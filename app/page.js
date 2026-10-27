@@ -1,6 +1,7 @@
+
 'use client';
 
-import {useEffect,useMemo,useState} from 'react';
+import {useEffect,useMemo,useRef,useState} from 'react';
 import AuthGate from '../components/AuthGate';
 import CamperSetupWizard from '../components/CamperSetupWizard';
 import {supabase} from '../lib/supabase';
@@ -24,6 +25,7 @@ const licenses=[
   ['B','B'],['B96','B96'],['BE','BE'],['C1','C1'],['C1E','C1E'],['C','C'],['CE','CE'],
   ['old3','Klasse 3 (alt)'],['old2','Klasse 2 (alt)'],['old1','Klasse 1 (alt)'],['old4','Klasse 4 (alt)'],['old5','Klasse 5 (alt)']
 ];
+const uuid=()=>crypto.randomUUID();
 const kg=n=>`${Number(n||0).toLocaleString('de-DE',{minimumFractionDigits:1,maximumFractionDigits:1})} kg`;
 
 export default function Home(){return <AuthGate>{({session,signOut})=><CampWeightApp session={session} signOut={signOut}/>}</AuthGate>}
@@ -40,6 +42,10 @@ function CampWeightApp({session,signOut}){
   const [cloudCamperId,setCloudCamperId]=useState('');
   const [cloudChecked,setCloudChecked]=useState(false);
   const [needsSetup,setNeedsSetup]=useState(false);
+  const [cloudLoaded,setCloudLoaded]=useState(false);
+  const syncQueue=useRef(Promise.resolve());
+  const cloudItemIds=useRef([]),cloudTripIds=useRef([]),cloudTowId=useRef(null);
+  const lastCloudSnapshot=useRef('');
 
   useEffect(()=>{
     try{
@@ -55,38 +61,94 @@ function CampWeightApp({session,signOut}){
   },[]);
   useEffect(()=>{if(ready)localStorage.setItem(KEY,JSON.stringify({camper,tow,license,items,trips}))},[ready,camper,tow,license,items,trips]);
 
+  // Erst Cloud-Daten laden, danach automatische Schreibvorgänge freigeben.
   useEffect(()=>{
-    if(!ready||!session?.user?.id||!supabase)return;
+    if(!ready||!session?.user?.id)return;
     let cancelled=false;
+    const userId=session.user.id;
     (async()=>{
-      setCloudStatus('synchronisiert …');
-      const {data,error}=await supabase.from('campers').select('*').eq('owner_id',session.user.id).order('created_at',{ascending:true}).limit(1).maybeSingle();
-      if(cancelled)return;
-      if(error){setCloudStatus('Cloud-Fehler');setCloudChecked(true);return}
-      if(data){
-        setCloudCamperId(data.id);
-        setCamper(c=>({...c,mode:data.vehicle_type==='motorhome'?'motorhome':'caravan',name:data.name,manufacturer:data.manufacturer||'',model:data.model||'',modelYear:data.model_year||'',noseWeight:data.max_nose_weight_kg||'',baseWeight:Number(data.base_weight_kg),maxWeight:Number(data.max_weight_kg)}));
-        setNeedsSetup(!data.manufacturer||!data.model||data.name==='Mein Camper');
-        setCloudStatus('Cloud geladen');
-        setCloudChecked(true);
-      }else{
-        const {data:created,error:createError}=await supabase.from('campers').insert({owner_id:session.user.id,vehicle_type:camper.mode==='motorhome'?'motorhome':'caravan',name:camper.name,manufacturer:camper.manufacturer||null,model:camper.model||null,model_year:camper.modelYear?Number(camper.modelYear):null,max_nose_weight_kg:camper.noseWeight?Number(camper.noseWeight):null,base_weight_kg:Number(camper.baseWeight||0),max_weight_kg:Number(camper.maxWeight||1)}).select('id').single();
+      setCloudLoaded(false);
+      setCloudChecked(false);
+      setCloudStatus('Cloud wird geladen …');
+      try{
+        const {data:existing,error:camperError}=await supabase.from('campers').select('*').eq('owner_id',userId).order('created_at',{ascending:true}).limit(1).maybeSingle();
+        if(camperError)throw camperError;
         if(cancelled)return;
-        if(createError){setCloudStatus('Cloud-Fehler');setCloudChecked(true)}else{setCloudCamperId(created.id);setCloudStatus('Cloud angelegt');setNeedsSetup(true);setCloudChecked(true)}
-      }
+        let record=existing;
+        if(!record){
+          // Nur Camper anlegen; kein vorhandenes Inventar überschreiben.
+          const {data:created,error}=await supabase.from('campers').insert({owner_id:userId,vehicle_type:camper.mode==='motorhome'?'motorhome':'caravan',name:camper.name,base_weight_kg:Number(camper.baseWeight||0),max_weight_kg:Number(camper.maxWeight||1)}).select('*').single();
+          if(error)throw error;
+          record=created;
+        }
+        const id=record.id;
+        const [inventoryResult,tripsResult,towResult]=await Promise.all([
+          supabase.from('inventory_items').select('*').eq('owner_id',userId).eq('camper_id',id),
+          supabase.from('trips').select('*').eq('owner_id',userId).eq('camper_id',id),
+          supabase.from('tow_vehicles').select('*').eq('owner_id',userId).eq('camper_id',id).limit(1)
+        ]);
+        for(const result of [inventoryResult,tripsResult,towResult])if(result.error)throw result.error;
+        if(cancelled)return;
+        const cloudItems=inventoryResult.data||[],cloudTrips=tripsResult.data||[],cloudTow=towResult.data?.[0];
+        const local=JSON.parse(localStorage.getItem(KEY)||'null');
+        // Bei vorhandenen Cloud-Daten hat die Cloud Vorrang. Leere Cloud nur einmalig aus
+        // echten lokalen Nutzerdaten befüllen (nicht aus den Demo-Beispielen).
+        const localItems=Array.isArray(local?.items)?local.items:[];
+        const localTrips=Array.isArray(local?.trips)?local.trips:[];
+        const migrateItems=cloudItems.length===0&&localItems.some(i=>!['1','2','3'].includes(String(i.id)));
+        const migrateTrips=cloudTrips.length===0&&localTrips.length>0;
+        const idMap={};
+        const mappedItems=migrateItems?localItems.map(i=>{const newId=uuid();idMap[i.id]=newId;return {...i,id:newId}}):cloudItems.map(i=>({id:i.id,name:i.name,category:i.category||'Sonstiges',weight:Number(i.weight_per_unit_kg),owned:i.owned_quantity,loaded:i.loaded_quantity,position:i.loading_position||'Mitte',basic:i.equipment_type==='basic'}));
+        const mappedTrips=migrateTrips?localTrips.map(t=>({ ...t,id:uuid(),items:Object.fromEntries(Object.entries(t.items||{}).map(([oldId,q])=>[idMap[oldId]||oldId,q]))})):cloudTrips.map(t=>({id:t.id,name:t.name,adults:t.adults_count,children:t.children_count,days:t.days||7,items:t.items||{}}));
+        const loadedTow=cloudTow?{name:cloudTow.name,maxWeight:cloudTow.gross_weight_kg??'',brakedLimit:cloudTow.towing_capacity_braked_kg??'',unbrakedLimit:cloudTow.towing_capacity_unbraked_kg??'',noseLimit:cloudTow.nose_weight_limit_kg??'',trailerBraked:true}:local?.tow||initial.tow;
+        const loadedLicense={class:cloudTow?.licence_class||local?.license?.class||'B96'};
+        const loadedCamper={...initial.camper,mode:record.vehicle_type==='motorhome'?'motorhome':'caravan',name:record.name,manufacturer:record.manufacturer||'',model:record.model||'',modelYear:record.model_year||'',noseWeight:record.max_nose_weight_kg??'',baseWeight:Number(record.base_weight_kg),maxWeight:Number(record.max_weight_kg)};
+        cloudItemIds.current=cloudItems.map(i=>i.id);cloudTripIds.current=cloudTrips.map(t=>t.id);cloudTowId.current=cloudTow?.id||null;
+        setCamper(loadedCamper);setItems(mappedItems);setTrips(mappedTrips);setTow(loadedTow);setLicense(loadedLicense);
+        setCloudCamperId(id);
+        setNeedsSetup(!record.manufacturer||!record.model||record.name==='Mein Camper');
+        lastCloudSnapshot.current=(migrateItems||migrateTrips)?'':JSON.stringify({camper:loadedCamper,tow:loadedTow,license:loadedLicense,items:mappedItems,trips:mappedTrips});
+        setCloudLoaded(true);setCloudChecked(true);
+        setCloudStatus(migrateItems||migrateTrips?'Lokale Daten werden übernommen …':'Cloud geladen');
+      }catch(err){if(!cancelled){console.error('Cloud laden:',err);setCloudStatus('Cloud-Fehler: Laden fehlgeschlagen');setCloudChecked(true)}}
     })();
     return()=>{cancelled=true};
   },[ready,session?.user?.id]);
 
+  // Alle Änderungen verzögert und nacheinander speichern, damit kein älterer
+  // Schreibvorgang einen neueren überschreibt.
   useEffect(()=>{
-    if(!ready||!cloudCamperId||!supabase)return;
-    const timer=setTimeout(async()=>{
-      setCloudStatus('speichert …');
-      const {error}=await supabase.from('campers').update({vehicle_type:camper.mode==='motorhome'?'motorhome':'caravan',name:camper.name,manufacturer:camper.manufacturer||null,model:camper.model||null,model_year:camper.modelYear?Number(camper.modelYear):null,max_nose_weight_kg:camper.noseWeight?Number(camper.noseWeight):null,base_weight_kg:Number(camper.baseWeight||0),max_weight_kg:Number(camper.maxWeight||1)}).eq('id',cloudCamperId);
-      setCloudStatus(error?'Cloud-Fehler':'gespeichert');
-    },700);
+    if(!cloudLoaded||!cloudCamperId||!session?.user?.id)return;
+    const snapshot={camper,tow,license,items,trips};
+    const serialized=JSON.stringify(snapshot);
+    if(serialized===lastCloudSnapshot.current)return;
+    const timer=setTimeout(()=>{
+      const userId=session.user.id,camperId=cloudCamperId;
+      syncQueue.current=syncQueue.current.catch(()=>{}).then(async()=>{
+        setCloudStatus('speichert …');
+        const {error:camperError}=await supabase.from('campers').update({vehicle_type:camper.mode==='motorhome'?'motorhome':'caravan',name:camper.name,manufacturer:camper.manufacturer||null,model:camper.model||null,model_year:camper.modelYear?Number(camper.modelYear):null,max_nose_weight_kg:camper.noseWeight?Number(camper.noseWeight):null,base_weight_kg:Number(camper.baseWeight||0),max_weight_kg:Number(camper.maxWeight||1)}).eq('id',camperId).eq('owner_id',userId);
+        if(camperError)throw camperError;
+        const itemRows=items.map(i=>({id:i.id,owner_id:userId,camper_id:camperId,name:i.name,category:i.category,weight_per_unit_kg:Number(i.weight),owned_quantity:Number(i.owned),loaded_quantity:Number(i.loaded),loading_position:i.position,equipment_type:i.basic?'basic':'trip'}));
+        if(itemRows.length){const {error}=await supabase.from('inventory_items').upsert(itemRows,{onConflict:'id'});if(error)throw error}
+        const removedItems=cloudItemIds.current.filter(id=>!items.some(i=>i.id===id));
+        if(removedItems.length){const {error}=await supabase.from('inventory_items').delete().eq('owner_id',userId).eq('camper_id',camperId).in('id',removedItems);if(error)throw error}
+        cloudItemIds.current=items.map(i=>i.id);
+        const tripRows=trips.map(t=>({id:t.id,owner_id:userId,camper_id:camperId,name:t.name,adults_count:Number(t.adults),children_count:Number(t.children),days:Number(t.days),items:t.items||{}}));
+        if(tripRows.length){const {error}=await supabase.from('trips').upsert(tripRows,{onConflict:'id'});if(error)throw error}
+        const removedTrips=cloudTripIds.current.filter(id=>!trips.some(t=>t.id===id));
+        if(removedTrips.length){const {error}=await supabase.from('trips').delete().eq('owner_id',userId).eq('camper_id',camperId).in('id',removedTrips);if(error)throw error}
+        cloudTripIds.current=trips.map(t=>t.id);
+        if(tow.name?.trim()){
+          const towRow={owner_id:userId,camper_id:camperId,name:tow.name,gross_weight_kg:tow.maxWeight?Number(tow.maxWeight):null,towing_capacity_braked_kg:tow.brakedLimit?Number(tow.brakedLimit):null,towing_capacity_unbraked_kg:tow.unbrakedLimit?Number(tow.unbrakedLimit):null,nose_weight_limit_kg:tow.noseLimit?Number(tow.noseLimit):null,licence_class:license.class};
+          const {data,error}=await supabase.from('tow_vehicles').upsert(cloudTowId.current?{...towRow,id:cloudTowId.current}:towRow,{onConflict:'id'}).select('id').single();
+          if(error)throw error;cloudTowId.current=data.id;
+        }
+        lastCloudSnapshot.current=serialized;
+        setCloudStatus('gespeichert');
+      }).catch(err=>{console.error('Cloud speichern:',err);setCloudStatus('Cloud-Fehler: Speichern fehlgeschlagen')});
+    },900);
     return()=>clearTimeout(timer);
-  },[ready,cloudCamperId,camper]);
+  },[cloudLoaded,cloudCamperId,session?.user?.id,camper,tow,license,items,trips]);
 
   const pack=useMemo(()=>items.reduce((s,i)=>s+Number(i.loaded||0)*Number(i.weight||0),0),[items]);
   const total=Number(camper.baseWeight||0)+pack;
@@ -106,7 +168,7 @@ function CampWeightApp({session,signOut}){
     const name=form.name.trim(),weight=Number(form.weight),owned=Math.max(1,Number(form.owned||1));
     if(!name||weight<=0){alert('Bitte Produktname und Gewicht eintragen.');return}
     if(editId)setItems(a=>a.map(i=>i.id===editId?{...i,...form,name,weight,owned,loaded:Math.min(i.loaded,owned)}:i));
-    else setItems(a=>[...a,{id:String(Date.now()),...form,name,weight,owned,loaded:form.basic?owned:0}]);
+    else setItems(a=>[...a,{id:uuid(),...form,name,weight,owned,loaded:form.basic?owned:0}]);
     resetForm();
   }
   function edit(i){setEditId(i.id);setForm({name:i.name,category:i.category,weight:i.weight,owned:i.owned,position:i.position,basic:i.basic});setTab('inventory')}
@@ -152,6 +214,7 @@ function CampWeightApp({session,signOut}){
     setImportData(d=>({...d,fileName:file.name,headers:[],rows:[],error:'',busy:true}));
     try{
       const XLSX=await loadSheetJS();const buffer=await file.arrayBuffer();const wb=XLSX.read(buffer,{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];
+
       const matrix=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:false,blankrows:false});
       if(!matrix.length)throw new Error('Die Datei enthält keine lesbaren Daten.');
       let headerIndex=matrix.findIndex(row=>Array.isArray(row)&&row.filter(v=>String(v).trim()!=='').length>=2);if(headerIndex<0)headerIndex=0;
@@ -170,20 +233,20 @@ function CampWeightApp({session,signOut}){
   function confirmImport(){
     if(importData.mapping.name===''||importData.mapping.weight===''){alert('Bitte mindestens Produktname und Gewicht einer Excel-Spalte zuordnen.');return}
     const parsed=mappedImportRows(),valid=parsed.filter(r=>r.valid);if(!valid.length){alert('Es wurden keine gültigen Artikel mit Name und Gewicht gefunden.');return}
-    const stamp=Date.now();setItems(a=>[...a,...valid.map((r,i)=>({id:`import-${stamp}-${i}`,...r,loaded:r.basic?r.owned:0}))]);
+    setItems(a=>[...a,...valid.map((r,i)=>({id:uuid(),...r,loaded:r.basic?r.owned:0}))]);
     const skipped=parsed.length-valid.length;alert(`${valid.length} Artikel importiert${skipped?`. ${skipped} Zeile(n) ohne gültigen Namen/Gewicht wurden übersprungen.`:'.'}`);setImportData({fileName:'',headers:[],rows:[],mapping:{name:'',weight:'',owned:'',category:'',position:'',basic:''},error:'',busy:false});
   }
 
   function createTrip(){
     const name=tripForm.name.trim();
     if(!name){alert('Bitte einen Reisenamen eintragen.');return}
-    const trip={id:String(Date.now()),name,adults:Math.max(0,Number(tripForm.adults||0)),children:Math.max(0,Number(tripForm.children||0)),days:Math.max(1,Number(tripForm.days||1)),items:{}};
+    const trip={id:uuid(),name,adults:Math.max(0,Number(tripForm.adults||0)),children:Math.max(0,Number(tripForm.children||0)),days:Math.max(1,Number(tripForm.days||1)),items:{}};
     setTrips(a=>[...a,trip]);setActiveTripId(trip.id);setTripForm({name:'',adults:2,children:0,days:7});
   }
   function updateTrip(id,patch){setTrips(a=>a.map(t=>t.id===id?{...t,...patch}:t))}
   function setTripQty(itemId,value){if(!activeTrip)return;const item=items.find(i=>i.id===itemId);if(!item)return;const q=Math.max(0,Math.min(item.owned,Number(value||0)));setTrips(a=>a.map(t=>t.id===activeTrip.id?{...t,items:{...(t.items||{}),[itemId]:q}}:t))}
   function deleteTrip(id){const t=trips.find(x=>x.id===id);if(t&&confirm(`Reise „${t.name}“ wirklich löschen?`)){setTrips(a=>a.filter(x=>x.id!==id));if(activeTripId===id)setActiveTripId('')}}
-  function duplicateTrip(id){const t=trips.find(x=>x.id===id);if(!t)return;const copy={...t,id:String(Date.now()),name:`${t.name} – Kopie`,items:{...(t.items||{})}};setTrips(a=>[...a,copy]);setActiveTripId(copy.id)}
+  function duplicateTrip(id){const t=trips.find(x=>x.id===id);if(!t)return;const copy={...t,id:uuid(),name:`${t.name} – Kopie`,items:{...(t.items||{})}};setTrips(a=>[...a,copy]);setActiveTripId(copy.id)}
   function loadTrip(){if(!activeTrip)return;setItems(a=>a.map(i=>i.basic?i:{...i,loaded:Math.max(0,Math.min(i.owned,Number(activeTrip.items?.[i.id]||0))) }))}
   function unloadTrip(){setItems(a=>a.map(i=>i.basic?i:{...i,loaded:0}))}
   function planFromCamper(){if(!activeTrip)return;const map={};items.filter(i=>!i.basic).forEach(i=>{map[i.id]=i.loaded});updateTrip(activeTrip.id,{items:map})}
@@ -195,8 +258,9 @@ function CampWeightApp({session,signOut}){
     if(id){const {error}=await supabase.from('campers').update(payload).eq('id',id);if(error)throw error}
     else{const {data:created,error}=await supabase.from('campers').insert(payload).select('id').single();if(error)throw error;id=created.id;setCloudCamperId(id)}
     if(data.mode==='caravan'&&data.addTow&&data.towName.trim()){
-      const {error}=await supabase.from('tow_vehicles').insert({owner_id:session.user.id,camper_id:id,name:data.towName.trim(),gross_weight_kg:data.towMaxWeight?Number(data.towMaxWeight):null,towing_capacity_braked_kg:data.towBrakedLimit?Number(data.towBrakedLimit):null,nose_weight_limit_kg:data.towNoseLimit?Number(data.towNoseLimit):null});
-      if(error)throw error;
+      const {data:savedTow,error}=await supabase.from('tow_vehicles').upsert({...(cloudTowId.current?{id:cloudTowId.current}:{}),owner_id:session.user.id,camper_id:id,name:data.towName.trim(),gross_weight_kg:data.towMaxWeight?Number(data.towMaxWeight):null,towing_capacity_braked_kg:data.towBrakedLimit?Number(data.towBrakedLimit):null,nose_weight_limit_kg:data.towNoseLimit?Number(data.towNoseLimit):null},{onConflict:'id'}).select('id').single();
+if(error)throw error;
+if(savedTow)cloudTowId.current=savedTow.id;
       setTow(t=>({...t,name:data.towName,maxWeight:data.towMaxWeight,brakedLimit:data.towBrakedLimit,noseLimit:data.towNoseLimit}));
     }
     setCamper(c=>({...c,...camperPatch}));setNeedsSetup(false);setCloudStatus('gespeichert');setTab('dashboard');
@@ -216,7 +280,7 @@ function CampWeightApp({session,signOut}){
     <aside>
       <div className='brand'><img className='brandLogo' src='/campweight-logo.png' alt='CampWeight – Pack smart. Travel safe.'/></div>
       <nav>{nav.map(([id,l])=><button key={id} className={tab===id?'active':''} onClick={()=>setTab(id)}>{l}</button>)}</nav>
-      <small>Lokale Testversion · automatische Speicherung</small>
+      <small>Cloud-Synchronisierung · {cloudStatus}</small>
     </aside>
 
     <main className='content'>
