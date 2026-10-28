@@ -44,6 +44,7 @@ export default function Home(){return <AuthGate>{({session,signOut})=><CampWeigh
 
 function CampWeightApp({session,signOut}){
   const [ready,setReady]=useState(false),[tab,setTab]=useState('dashboard');
+const [loadingFilter,setLoadingFilter]=useState('all');
   const [camper,setCamper]=useState(initial.camper),[tow,setTow]=useState(initial.tow),[license,setLicense]=useState(initial.license),[items,setItems]=useState(initial.items),[trips,setTrips]=useState(initial.trips);
   const [selHome,setSelHome]=useState(''),[selCamper,setSelCamper]=useState(''),[editId,setEditId]=useState(null);
   const [form,setForm]=useState({name:'',category:'Sonstiges',weight:'',owned:1,position:'Mitte',basic:false});
@@ -380,7 +381,94 @@ if(savedTow)cloudTowId.current=savedTow.id;
         </>}
       </>}
 
-      {tab==='loading'&&<><Card title='Camper beladen'><div className='topButtons'><button onClick={loadEverything}>Alles einladen</button><button className='secondary' onClick={unloadTravel}>Reisegepäck ausladen</button></div><div className='dual'><div><h3>Zuhause / verfügbar</h3><select size='12' value={selHome} onChange={e=>setSelHome(e.target.value)}>{home.map(i=><option key={i.id} value={i.id}>{i.name} · zuhause {i.owned-i.loaded}/{i.owned}</option>)}</select></div><div className='arrows'><button onClick={()=>qty(selHome||home[0]?.id,1)}>1 →</button><button onClick={()=>selHome&&setAll(selHome,true)}>Alle →</button><button className='secondary' onClick={()=>qty(selCamper||loaded[0]?.id,-1)}>← 1</button><button className='secondary' onClick={()=>selCamper&&setAll(selCamper,false)}>← Alle</button></div><div><h3>Im Camper</h3><select size='12' value={selCamper} onChange={e=>setSelCamper(e.target.value)}>{loaded.map(i=><option key={i.id} value={i.id}>{i.loaded}× {i.name} · {kg(i.loaded*i.weight)} · {i.position}</option>)}</select></div></div></Card><section className='stats'><Stat t='Packgewicht' v={kg(pack)}/><Stat t='Gesamtgewicht' v={kg(total)}/><Stat t='Reserve' v={kg(reserve)}/><Stat t='Im Camper' v={`${loaded.reduce((s,i)=>s+i.loaded,0)} Stück`}/></section></>}
+     
+{tab==='loading'&&<>
+  <section className="loadingOverview">
+    <div>
+      <span>Aktuelles Gesamtgewicht</span>
+      <strong>{kg(total)}</strong>
+      <small>Davon {kg(pack)} Zuladung</small>
+    </div>
+    <div className={reserve<0?'loadingReserve over':'loadingReserve'}>
+      <span>Verbleibende Reserve</span>
+      <strong>{kg(reserve)}</strong>
+      <small>Maximal {kg(camper.maxWeight)}</small>
+    </div>
+  </section>
+
+  <div className="loadingActions">
+    <button onClick={loadEverything}>Alles einladen</button>
+    <button className="secondary" onClick={unloadTravel}>
+      Reisegepäck ausladen
+    </button>
+  </div>
+
+  <Card title="Packstücke verwalten">
+    <p className="note">
+      Plus oder nach rechts wischen: einladen.
+      Minus oder nach links wischen: ausladen.
+    </p>
+
+
+<div className="loadingActions" role="group" aria-label="Packstücke filtern">
+  <button
+    type="button"
+    className={loadingFilter==='all'?'':'secondary'}
+    aria-pressed={loadingFilter==='all'}
+    onClick={()=>setLoadingFilter('all')}
+  >
+    Alle ({items.length})
+  </button>
+
+  <button
+    type="button"
+    className={loadingFilter==='loaded'?'':'secondary'}
+    aria-pressed={loadingFilter==='loaded'}
+    onClick={()=>setLoadingFilter('loaded')}
+  >
+    Im Camper ({loaded.length})
+  </button>
+
+  <button
+    type="button"
+    className={loadingFilter==='home'?'':'secondary'}
+    aria-pressed={loadingFilter==='home'}
+    onClick={()=>setLoadingFilter('home')}
+  >
+    Zuhause ({home.length})
+  </button>
+</div>
+
+<div className="loadingCards">
+  {items
+    .filter(i=>
+      loadingFilter==='all' ||
+      (loadingFilter==='loaded' && i.loaded>0) ||
+      (loadingFilter==='home' && i.owned-i.loaded>0)
+    )
+    .map(i=><LoadingItem
+      key={i.id}
+      item={i}
+      onChange={delta=>qty(i.id,delta)}
+    />)}
+</div>
+
+
+    {items.length===0&&
+      <p>Noch keine Packstücke vorhanden.</p>}
+  </Card>
+
+  <section className="stats">
+    <Stat t="Packgewicht" v={kg(pack)}/>
+    <Stat t="Gesamtgewicht" v={kg(total)}/>
+    <Stat t="Reserve" v={kg(reserve)}/>
+    <Stat
+      t="Im Camper"
+      v={`${loaded.reduce((s,i)=>s+i.loaded,0)} Stück`}
+    />
+  </section>
+</>}
+
 
       {tab==='tow'&&camper.mode==='caravan'&&<>
         <Card title='Zugfahrzeug anlegen'>
@@ -393,24 +481,47 @@ if(savedTow)cloudTowId.current=savedTow.id;
           </div>
           <label className='check'><input type='checkbox' checked={!!tow.trailerBraked} onChange={e=>setTow(t=>({...t,trailerBraked:e.target.checked}))}/> Wohnwagen / Anhänger ist gebremst</label>
         </Card>
-        <Card title='Technischer Gespann-Check'><CheckBox result={techCheck}/><p className='note'>Für die Anhängelast vergleichen wir das aktuell berechnete Wohnwagengewicht mit O.1 bzw. O.2. Entscheidend sind im echten Betrieb die tatsächlichen Massen und die Angaben in Fahrzeugpapieren/COC.</p></Card>
+        <Card title='Technischer Gespann-Check'>
+          <CheckBox result={techCheck}/>
+          <p className='note'>Für die Anhängelast vergleichen wir das aktuell berechnete Wohnwagengewicht mit O.1 bzw. O.2. Entscheidend sind im echten Betrieb die tatsächlichen Massen und die Angaben in Fahrzeugpapieren/COC.</p>
+        </Card>
       </>}
 
       {tab==='license'&&<>
         <Card title='Führerschein auswählen'>
-          <label>Führerscheinklasse<select value={license.class} onChange={e=>setLicense({class:e.target.value})}>{licenses.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>
+          <label>Führerscheinklasse
+            <select value={license.class} onChange={e=>setLicense({class:e.target.value})}>
+              {licenses.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+            </select>
+          </label>
           <div className='hint'>{camper.mode==='caravan'?'Für den Gespann-Check werden die zulässigen Gesamtmassen von Zugfahrzeug und Wohnwagen verwendet – nicht die aktuelle Beladung.':'Für den Wohnmobil-Check wird die zulässige Gesamtmasse des Wohnmobils verwendet.'}</div>
         </Card>
-        <Card title='Ergebnis'><CheckBox result={licenseCheck}/>{licenseCheck.details?.map((d,i)=><p className='resultLine' key={i}>{d}</p>)}</Card>
-        {camper.mode==='caravan'&&<Card title='Technische Prüfung'><CheckBox result={techCheck}/>{techCheck.details?.map((d,i)=><p className='resultLine' key={i}>{d}</p>)}</Card>}
-        <Card title='Hinweis zu alten deutschen Führerscheinklassen'><p className='note'>Bei alten Klassen können Besitzstandsrechte, Umtausch, Schlüsselzahlen, Achszahl sowie Alters-/Gesundheitsvorgaben eine Rolle spielen. CampWeight zeigt deshalb bei komplexen Altklassen bewusst einen Prüfhinweis statt einer pauschalen Freigabe.</p></Card>
+        <Card title='Ergebnis'>
+          <CheckBox result={licenseCheck}/>
+          {licenseCheck.details?.map((d,i)=><p className='resultLine' key={i}>{d}</p>)}
+        </Card>
+        {camper.mode==='caravan'&&<Card title='Technische Prüfung'>
+          <CheckBox result={techCheck}/>
+          {techCheck.details?.map((d,i)=><p className='resultLine' key={i}>{d}</p>)}
+        </Card>}
+        <Card title='Hinweis zu alten deutschen Führerscheinklassen'>
+          <p className='note'>Bei alten Klassen können Besitzstandsrechte, Umtausch, Schlüsselzahlen, Achszahl sowie Alters-/Gesundheitsvorgaben eine Rolle spielen. CampWeight zeigt deshalb bei komplexen Altklassen bewusst einen Prüfhinweis statt einer pauschalen Freigabe.</p>
+        </Card>
       </>}
 
-      <section className='accountBar'><span><b>{session?.user?.email}</b><small>Cloud: {cloudStatus}</small></span><button className='secondary' onClick={signOut}>Abmelden</button></section>
+      <section className='accountBar'>
+        <span>
+          <b>{session?.user?.email}</b>
+          <small>Cloud: {cloudStatus}</small>
+        </span>
+        <button className='secondary' onClick={signOut}>Abmelden</button>
+      </section>
 
-      <section className='legal'><b>Rechtlicher Hinweis:</b> Die berechneten Werte und Empfehlungen dienen ausschließlich der Orientierung. Die Verantwortung für ordnungsgemäße Beladung, Fahrerlaubnis, gesetzliche Vorschriften und Verkehrssicherheit liegt beim Fahrzeugführer.</section>
+      <section className='legal'>
+        <b>Rechtlicher Hinweis:</b> Die berechneten Werte und Empfehlungen dienen ausschließlich der Orientierung. Die Verantwortung für ordnungsgemäße Beladung, Fahrerlaubnis, gesetzliche Vorschriften und Verkehrssicherheit liegt beim Fahrzeugführer.
+      </section>
     </main>
-  </div>
+  </div>;
 }
 
 function checkLicense({mode,license,camperMax,towMax}){
@@ -427,6 +538,7 @@ function checkLicense({mode,license,camperMax,towMax}){
 
   if(!towMax)return {level:'neutral',title:'Daten fehlen',text:'Bitte zGG des Zugfahrzeugs (F.2) eintragen.',details:[]};
   const combo=camperMax+towMax;
+
   if(license==='B'){
     const allowed=camperMax<=750 ? towMax<=3500 : combo<=3500;
     return allowed?ok('Klasse B ausreichend','Das Gespann liegt innerhalb der B-Regeln.',[`Zugfahrzeug zGG: ${kg(towMax)}`,`Wohnwagen zGG: ${kg(camperMax)}`,`Summe zGG: ${kg(combo)}`]):bad('Klasse B nicht ausreichend','Die zulässigen Gesamtmassen überschreiten den für B zulässigen Rahmen.',[`Summe zGG: ${kg(combo)}.`]);
@@ -462,7 +574,8 @@ function checkTechnical({mode,currentTrailerWeight,tow,camperMax,reserve}){
     if(currentTrailerWeight>limit){level='bad';details.push(`Geschätztes aktuelles Anhängergewicht liegt über der eingetragenen Anhängelast von ${kg(limit)}.`)}
     else details.push(`Anhängelast ${tow.trailerBraked?'O.1':'O.2'}: ${kg(limit)} – nach aktueller Schätzung eingehalten.`);
   }else{
-    if(level!=='bad')level='neutral';details.push(`Anhängelast ${tow.trailerBraked?'O.1':'O.2'} fehlt.`)
+    if(level!=='bad')level='neutral';
+    details.push(`Anhängelast ${tow.trailerBraked?'O.1':'O.2'} fehlt.`);
   }
   if(tow.noseLimit)details.push(`Max. eingetragene Stützlast Zugfahrzeug: ${kg(tow.noseLimit)}. Tatsächliche Stützlast muss gemessen werden.`);
   return level==='bad'?bad('Technische Grenze prüfen','Mindestens eine technische Gewichtsgrenze ist kritisch.',details):level==='neutral'?{level:'neutral',title:'Technikdaten unvollständig',text:'Für die vollständige Prüfung fehlen noch Werte aus dem Fahrzeugschein.',details}:ok('Technische Basisprüfung unauffällig','Die eingegebenen Basiswerte ergeben aktuell keinen offensichtlichen Konflikt.',details);
@@ -472,8 +585,115 @@ function ok(title,text,details=[]){return {level:'ok',title,text,details}}
 function warn(title,text,details=[]){return {level:'warn',title,text,details}}
 function bad(title,text,details=[]){return {level:'bad',title,text,details}}
 function labelLicense(v){return Object.fromEntries(licenses)[v]||v}
-function CheckBox({result}){return <div className={`checkBox ${result.level||'neutral'}`}><b>{result.title}</b><span>{result.text}</span></div>}
-function Card({title,children}){return <section className='card'><h2>{title}</h2>{children}</section>}
-function Stat({t,v}){return <div className='stat'><span>{t}</span><b>{v}</b></div>}
-function Progress({total,max}){const p=max?Math.min(100,total/max*100):0;return <div className='progress'><div className={total>max?'fill red':p>90?'fill yellow':'fill'} style={{width:`${p}%`}}/></div>}
-function Table({items,edit,del}){return <div className='table'><table><thead><tr><th>Produkt</th><th>Kategorie</th><th>Gewicht</th><th>Besitz</th><th>Zuhause</th><th>Im Camper</th><th>Position</th><th>Grundausstattung</th><th>Aktion</th></tr></thead><tbody>{items.map(i=><tr key={i.id}><td><b>{i.name}</b></td><td>{i.category}</td><td>{kg(i.weight)}</td><td>{i.owned}</td><td>{i.owned-i.loaded}</td><td>{i.loaded}</td><td>{i.position}</td><td>{i.basic?'Ja':'Nein'}</td><td><div className='mini'><button onClick={()=>edit(i)}>Bearbeiten</button><button className='danger' onClick={()=>del(i.id)}>Löschen</button></div></td></tr>)}</tbody></table></div>}
+
+function CheckBox({result}){
+  return <div className={`checkBox ${result.level||'neutral'}`}>
+    <b>{result.title}</b>
+    <span>{result.text}</span>
+  </div>;
+}
+
+function Card({title,children}){
+  return <section className='card'><h2>{title}</h2>{children}</section>;
+}
+
+function Stat({t,v}){
+  return <div className='stat'><span>{t}</span><b>{v}</b></div>;
+}
+
+function Progress({total,max}){
+  const p=max?Math.min(100,total/max*100):0;
+  return <div className='progress'>
+    <div className={total>max?'fill red':p>90?'fill yellow':'fill'} style={{width:`${p}%`}}/>
+  </div>;
+}
+
+function Table({items,edit,del}){
+  return <div className='table'>
+    <table>
+      <thead><tr>
+        <th>Produkt</th><th>Kategorie</th><th>Gewicht</th>
+        <th>Besitz</th><th>Zuhause</th><th>Im Camper</th>
+        <th>Position</th><th>Grundausstattung</th><th>Aktion</th>
+      </tr></thead>
+      <tbody>
+        {items.map(i=><tr key={i.id}>
+          <td><b>{i.name}</b></td>
+          <td>{i.category}</td>
+          <td>{kg(i.weight)}</td>
+          <td>{i.owned}</td>
+          <td>{i.owned-i.loaded}</td>
+          <td>{i.loaded}</td>
+          <td>{i.position}</td>
+          <td>{i.basic?'Ja':'Nein'}</td>
+          <td><div className='mini'>
+            <button onClick={()=>edit(i)}>Bearbeiten</button>
+            <button className='danger' onClick={()=>del(i.id)}>Löschen</button>
+          </div></td>
+        </tr>)}
+      </tbody>
+    </table>
+  </div>;
+}
+
+/* Neue Beladungskarten – bewusst außerhalb der Hauptkomponente */
+
+function LoadingItem({item,onChange}){
+  const touchStart=useRef(null);
+
+  function handleTouchEnd(e){
+    if(!touchStart.current)return;
+
+    const dx=e.changedTouches[0].clientX-touchStart.current.x;
+    const dy=e.changedTouches[0].clientY-touchStart.current.y;
+    touchStart.current=null;
+
+    if(Math.abs(dx)<70 || Math.abs(dx)<Math.abs(dy)*1.5)return;
+
+    if(dx>0 && item.loaded<item.owned)onChange(1);
+    if(dx<0 && item.loaded>0)onChange(-1);
+  }
+
+  return <article
+    className="loadingItem"
+    onTouchStart={e=>{
+      touchStart.current={
+        x:e.touches[0].clientX,
+        y:e.touches[0].clientY
+      };
+    }}
+    onTouchEnd={handleTouchEnd}
+    onTouchCancel={()=>{touchStart.current=null}}
+  >
+    <div className="loadingItemTop">
+      <div>
+        <strong>{item.name}</strong>
+        <small>{item.category} · {item.position}</small>
+        <small>{kg(item.weight)} pro Stück</small>
+      </div>
+      <span className="loadingItemCount">
+        {item.loaded} / {item.owned}
+      </span>
+    </div>
+
+    <div className="loadingItemBottom">
+      <span>{kg(item.loaded*item.weight)} eingeladen</span>
+      <div className="loadingStepper">
+        <button
+          type="button"
+          className="secondary"
+          disabled={item.loaded<=0}
+          aria-label={`${item.name} ausladen`}
+          onClick={()=>onChange(-1)}
+        >−</button>
+        <b>{item.loaded}</b>
+        <button
+          type="button"
+          disabled={item.loaded>=item.owned}
+          aria-label={`${item.name} einladen`}
+          onClick={()=>onChange(1)}
+        >+</button>
+      </div>
+    </div>
+  </article>;
+}
