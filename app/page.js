@@ -44,6 +44,7 @@ export default function Home(){return <AuthGate>{({session,signOut})=><CampWeigh
 
 function CampWeightApp({session,signOut}){
   const [ready,setReady]=useState(false),[tab,setTab]=useState('dashboard');
+const [loadingFilter,setLoadingFilter]=useState('all');
   const [camper,setCamper]=useState(initial.camper),[tow,setTow]=useState(initial.tow),[license,setLicense]=useState(initial.license),[items,setItems]=useState(initial.items),[trips,setTrips]=useState(initial.trips);
   const [selHome,setSelHome]=useState(''),[selCamper,setSelCamper]=useState(''),[editId,setEditId]=useState(null);
   const [form,setForm]=useState({name:'',category:'Sonstiges',weight:'',owned:1,position:'Mitte',basic:false});
@@ -408,13 +409,50 @@ if(savedTow)cloudTowId.current=savedTow.id;
       Minus oder nach links wischen: ausladen.
     </p>
 
-    <div className="loadingCards">
-      {items.map(i=><LoadingItem
-        key={i.id}
-        item={i}
-        onChange={delta=>qty(i.id,delta)}
-      />)}
-    </div>
+
+<div className="loadingActions" role="group" aria-label="Packstücke filtern">
+  <button
+    type="button"
+    className={loadingFilter==='all'?'':'secondary'}
+    aria-pressed={loadingFilter==='all'}
+    onClick={()=>setLoadingFilter('all')}
+  >
+    Alle ({items.length})
+  </button>
+
+  <button
+    type="button"
+    className={loadingFilter==='loaded'?'':'secondary'}
+    aria-pressed={loadingFilter==='loaded'}
+    onClick={()=>setLoadingFilter('loaded')}
+  >
+    Im Camper ({loaded.length})
+  </button>
+
+  <button
+    type="button"
+    className={loadingFilter==='home'?'':'secondary'}
+    aria-pressed={loadingFilter==='home'}
+    onClick={()=>setLoadingFilter('home')}
+  >
+    Zuhause ({home.length})
+  </button>
+</div>
+
+<div className="loadingCards">
+  {items
+    .filter(i=>
+      loadingFilter==='all' ||
+      (loadingFilter==='loaded' && i.loaded>0) ||
+      (loadingFilter==='home' && i.owned-i.loaded>0)
+    )
+    .map(i=><LoadingItem
+      key={i.id}
+      item={i}
+      onChange={delta=>qty(i.id,delta)}
+    />)}
+</div>
+
 
     {items.length===0&&
       <p>Noch keine Packstücke vorhanden.</p>}
