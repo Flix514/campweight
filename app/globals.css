@@ -24,3 +24,151 @@
 .setupTop{display:flex;justify-content:space-between;align-items:center;gap:20px}.setupTop img{width:180px;max-width:55%}.linkButton{width:auto!important;background:transparent!important;color:var(--muted)!important;padding:8px!important}
 .stepTrack{height:7px;background:#e6eeeb;border-radius:99px;overflow:hidden;margin:24px 0 18px}.stepTrack span{display:block;height:100%;background:var(--green);border-radius:99px;transition:width .25s ease}.eyebrow{color:var(--green);font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}.setupCard h1{font-size:clamp(28px,5vw,42px);line-height:1.1;color:var(--navy);margin:10px 0 12px}.lead,.setupCenter p{color:var(--muted);font-size:17px;line-height:1.6}.setupCenter{text-align:center;margin:auto 0}.setupIcon{font-size:58px;margin-bottom:8px}.choiceGrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:24px}.choice{background:#f7faf9;color:var(--navy);border:2px solid var(--line);padding:24px;display:flex;flex-direction:column;align-items:flex-start;gap:7px;text-align:left}.choice span{font-size:38px}.choice b{font-size:21px}.choice small{color:var(--muted);font-weight:400}.activeChoice{border-color:var(--green);background:#eef8ed;box-shadow:0 0 0 3px rgba(61,139,50,.1)}.setupFields{display:grid;grid-template-columns:1fr 1fr;gap:14px}.setupCard label{font-size:15px}.setupCard input,.setupCard select{font-size:17px;padding:14px}.setupActions{display:flex;justify-content:flex-end;gap:10px;margin-top:auto;padding-top:28px}.setupActions button{min-width:130px;padding:13px 20px}.setupActions button:disabled{opacity:.6;cursor:not-allowed}.setupResult,.summaryBox{margin-top:20px;background:#eef8ed;border:1px solid #cfe4cc;border-radius:15px;padding:17px;display:flex;flex-direction:column;gap:5px}.setupResult span,.summaryBox span,.summaryBox small{color:var(--muted)}.setupResult b{font-size:25px;color:var(--green)}.summaryBox{max-width:420px;margin:22px auto 0;text-align:left}.summaryBox b{font-size:21px;color:var(--navy)}.toggleLine{display:flex!important;align-items:center;gap:10px;background:#f7faf9;border:1px solid var(--line);border-radius:12px;padding:14px;margin:16px 0!important}.toggleLine input{width:auto;margin:0}.errorMessage{background:#fde8e6;color:var(--red);margin-top:16px}
 @media(max-width:700px){.setupPage{padding:0;background:#fff}.setupCard{min-height:100vh;border:0;border-radius:0;padding:22px}.choiceGrid,.setupFields{grid-template-columns:1fr}.setupActions{position:sticky;bottom:0;background:#fff;padding-bottom:4px}.setupActions button{flex:1}.setupTop img{width:150px}}
+
+/* CampWeight Mobile Design – Phase 1 */
+@media (max-width: 700px) {
+  html {
+    scroll-padding-bottom: 110px;
+  }
+
+  body {
+    overflow-x: hidden;
+  }
+
+  .shell {
+    display: block;
+    min-width: 0;
+  }
+
+  .shell aside {
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    height: auto;
+    min-height: 0;
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+    background: var(--navy);
+    border-radius: 18px 18px 0 0;
+  }
+
+  .shell aside .brand,
+  .shell aside small {
+    display: none !important;
+  }
+
+  .shell aside nav {
+    display: flex;
+    flex-direction: row;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .shell aside nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .shell aside nav button {
+    flex: 0 0 auto;
+    min-height: 48px;
+    padding: 10px 13px;
+    border-radius: 12px;
+    font-size: 12px;
+    white-space: nowrap;
+    text-align: center;
+  }
+
+  .shell aside nav button.active {
+    background: var(--green);
+    color: #fff;
+  }
+
+  .content {
+    width: 100%;
+    min-width: 0;
+    padding: 18px 14px calc(110px + env(safe-area-inset-bottom));
+  }
+
+  .content header {
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+
+  .content header h1 {
+    font-size: 26px;
+  }
+
+  .status {
+    padding: 9px 13px;
+    font-size: 13px;
+  }
+
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .stat,
+  .card,
+  .legal {
+    min-width: 0;
+    padding: 15px;
+    border-radius: 15px;
+  }
+
+  .stat b {
+    font-size: clamp(17px, 5vw, 23px);
+  }
+
+  .stat span {
+    font-size: 12px;
+  }
+
+  .two,
+  .form,
+  .towForm,
+  .tripForm,
+  .tripMeta,
+  .importMap {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  .buttons button,
+  .topButtons button,
+  .arrows button {
+    min-height: 44px;
+  }
+
+  .dual {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .dual select {
+    height: 160px;
+  }
+
+  .arrows {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .table {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .accountBar {
+    overflow-wrap: anywhere;
+  }
+}
