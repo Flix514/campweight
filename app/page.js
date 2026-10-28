@@ -431,60 +431,86 @@ if(savedTow)cloudTowId.current=savedTow.id;
   </section>
 </>}
 
-function LoadingItem({item,onChange}){
-  const touchStart=useRef(null);
 
-  function handleTouchEnd(e){
-    if(!touchStart.current)return;
+function LoadingItem({item,onChange}) {
+  const touchStart = useRef(null);
 
-    const dx=e.changedTouches[0].clientX-touchStart.current.x;
-    const dy=e.changedTouches[0].clientY-touchStart.current.y;
-    touchStart.current=null;
+  function handleTouchEnd(e) {
+    if (!touchStart.current) return;
 
-    if(Math.abs(dx)<70 || Math.abs(dx)<Math.abs(dy)*1.5)return;
+    const dx =
+      e.changedTouches[0].clientX - touchStart.current.x;
+    const dy =
+      e.changedTouches[0].clientY - touchStart.current.y;
 
-    if(dx>0 && item.loaded<item.owned)onChange(1);
-    if(dx<0 && item.loaded>0)onChange(-1);
+    touchStart.current = null;
+
+    if (
+      Math.abs(dx) < 70 ||
+      Math.abs(dx) < Math.abs(dy) * 1.5
+    ) return;
+
+    if (dx > 0 && item.loaded < item.owned) {
+      onChange(1);
+    }
+
+    if (dx < 0 && item.loaded > 0) {
+      onChange(-1);
+    }
   }
 
-  return <article
-    className="loadingItem"
-    onTouchStart={e=>{
-      touchStart.current={
-        x:e.touches[0].clientX,
-        y:e.touches[0].clientY
-      };
-    }}
-    onTouchEnd={handleTouchEnd}
-    onTouchCancel={()=>{touchStart.current=null}}
-  >
-    <div className="loadingItemTop">
-      <div>
-        <strong>{item.name}</strong>
-        <small>{item.category} · {item.position}</small>
-        <small>{kg(item.weight)} pro Stück</small>
-      </div>
-      <span className="loadingItemCount">
-        {item.loaded} / {item.owned}
-      </span>
-    </div>
+  return (
+    <article
+      className="loadingItem"
+      onTouchStart={e => {
+        touchStart.current = {
+          x: e.touches[0].clientX,
+          y: e.touches[0].clientY
+        };
+      }}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={() => {
+        touchStart.current = null;
+      }}
+    >
+      <div className="loadingItemTop">
+        <div>
+          <strong>{item.name}</strong>
+          <small>{item.category} · {item.position}</small>
+          <small>{kg(item.weight)} pro Stück</small>
+        </div>
 
-    <div className="loadingItemBottom">
-      <span>{kg(item.loaded*item.weight)} eingeladen</span>
-      <div className="loadingStepper">
-        <button
-          className="secondary"
-          disabled={item.loaded<=0}
-          aria-label={`${item.name} ausladen`}
-          onClick={()=>onChange(-1)}
-        >−</button>
-        <b>{item.loaded}</b>
-        <button
-          disabled={item.loaded>=item.owned}
-          aria-label={`${item.name} einladen`}
-          onClick={()=>onChange(1)}
-        >+</button>
+        <span className="loadingItemCount">
+          {item.loaded} / {item.owned}
+        </span>
       </div>
-    </div>
-  </article>;
+
+      <div className="loadingItemBottom">
+        <span>
+          {kg(item.loaded * item.weight)} eingeladen
+        </span>
+
+        <div className="loadingStepper">
+          <button
+            className="secondary"
+            disabled={item.loaded <= 0}
+            aria-label={`${item.name} ausladen`}
+            onClick={() => onChange(-1)}
+          >
+            −
+          </button>
+
+          <b>{item.loaded}</b>
+
+          <button
+            disabled={item.loaded >= item.owned}
+            aria-label={`${item.name} einladen`}
+            onClick={() => onChange(1)}
+          >
+            +
+          </button>
+        </div>
+      </div>
+    </article>
+  );
 }
