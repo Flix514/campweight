@@ -45,7 +45,9 @@ export default function Home(){return <AuthGate>{({session,signOut})=><CampWeigh
 
 function CampWeightApp({session,signOut}){
   const [ready,setReady]=useState(false),[tab,setTab]=useState('dashboard');
-const [loadingFilter,setLoadingFilter]=useState('all');
+const [loadingFilter,setLoadingFilter]=useState('all'); 
+const [showLoadTripDialog, setShowLoadTripDialog] = useState(false);
+
   const [camper,setCamper]=useState(initial.camper),[tow,setTow]=useState(initial.tow),[license,setLicense]=useState(initial.license),[items,setItems]=useState(initial.items),[trips,setTrips]=useState(initial.trips);
   const [selHome,setSelHome]=useState(''),[selCamper,setSelCamper]=useState(''),[editId,setEditId]=useState(null);
   const [form,setForm]=useState({name:'',category:'Sonstiges',weight:'',owned:1,position:'Mitte',basic:false});
@@ -313,7 +315,43 @@ const tripPackingPercent = tripPlannedCount > 0
   function deleteTrip(id){const t=trips.find(x=>x.id===id);if(t&&confirm(`Reise „${t.name}“ wirklich löschen?`)){setTrips(a=>a.filter(x=>x.id!==id));if(activeTripId===id)setActiveTripId('')}}
   function duplicateTrip(id){const t=trips.find(x=>x.id===id);if(!t)return;const copy={...t,id:uuid(),name:`${t.name} – Kopie`,items:{...(t.items||{})}};setTrips(a=>[...a,copy]);setActiveTripId(copy.id)}
   
+
 function loadTrip() {
+  if (!activeTrip) {
+    alert('Bitte zuerst eine Reise auswählen.');
+    return;
+  }
+
+  setShowLoadTripDialog(true);
+}
+
+function confirmLoadTrip(keepExisting) {
+  if (!activeTrip) return;
+
+  const plannedItems = activeTrip.items || {};
+
+  setItems(previous => previous.map(item => {
+    if (item.basic) return item;
+
+    const planned = Math.max(
+      0,
+      Math.min(
+        Number(item.owned) || 0,
+        Number(plannedItems[item.id]) || 0
+      )
+    );
+
+    return {
+      ...item,
+      loaded: keepExisting
+        ? Math.max(Number(item.loaded) || 0, planned)
+        : planned
+    };
+  }));
+
+  setShowLoadTripDialog(false);
+}
+
   if (!activeTrip) {
     alert('Bitte zuerst eine Reise auswählen.');
     return;
@@ -545,6 +583,65 @@ function handleMobileTouchEnd(e) {
 
      
 {tab==='loading'&&<>
+  
+{showLoadTripDialog && activeTrip && (
+  <div
+    className="loadTripOverlay"
+    onClick={() => setShowLoadTripDialog(false)}
+  >
+    <div
+      className="loadTripDialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="loadTripDialogTitle"
+      onClick={e => e.stopPropagation()}
+    >
+      <h2 id="loadTripDialogTitle">
+        Reisebeladung übernehmen
+      </h2>
+
+      <p>
+        Du möchtest die Packliste
+        <strong> „{activeTrip.name}“ </strong>
+        in deinen Camper laden.
+      </p>
+
+      <p>Was soll mit der bisherigen Beladung passieren?</p>
+
+      <button
+        type="button"
+        className="loadTripOption"
+        onClick={() => confirmLoadTrip(true)}
+      >
+        <strong>Beladung behalten</strong>
+        <span>
+          Vorhandene Gegenstände behalten und fehlende Mengen ergänzen.
+        </span>
+      </button>
+
+      <button
+        type="button"
+        className="loadTripOption"
+        onClick={() => confirmLoadTrip(false)}
+      >
+        <strong>Reisegepäck ersetzen</strong>
+        <span>
+          Bisheriges Reisegepäck entfernen und neue Packliste laden.
+          Die Grundausstattung bleibt erhalten.
+        </span>
+      </button>
+
+      <button
+        type="button"
+        className="loadTripCancel"
+        onClick={() => setShowLoadTripDialog(false)}
+      >
+        Abbrechen
+      </button>
+    </div>
+  </div>
+)}
+
   <section className="loadingOverview">
     <div>
       <span>Aktuelles Gesamtgewicht</span>
