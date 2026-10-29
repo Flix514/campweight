@@ -9,7 +9,8 @@ import {supabase} from '../lib/supabase';
 const KEY='campweight-s2'; // bewusst gleich: vorhandene Sprint-2-Daten bleiben erhalten
 const initial={
   camper:{mode:'caravan',name:'Mein Camper',baseWeight:1320,maxWeight:1700},
-  tow:{name:'',maxWeight:'',brakedLimit:'',unbrakeconst lastCloudSnapshot=useRef('');dLimit:'',noseLimit:'',trailerBraked:true},
+  
+tow:{name:'',maxWeight:'',brakedLimit:'',unbrakedLimit:'',noseLimit:'',trailerBraked:true},
   license:{class:'B96'},
   trips:[],
   items:[
