@@ -517,6 +517,50 @@ function handleMobileTouchEnd(e) {
     </div>
   </section>
 
+<section className="tripPackingOverview">
+  <h3>Packliste für deine Reise</h3>
+
+  {trips.length > 0 ? (
+    <>
+      <label htmlFor="loadingTripSelect">Reise auswählen</label>
+      <select
+        id="loadingTripSelect"
+        value={activeTrip?.id || ''}
+        onChange={e => setActiveTripId(e.target.value)}
+      >
+        {trips.map(trip => (
+          <option key={trip.id} value={trip.id}>
+            {trip.name}
+          </option>
+        ))}
+      </select>
+
+      <p>
+        <strong>{tripPackedCount} von {tripPlannedCount}</strong> geplanten
+        Packstücken eingeladen ({tripPackingPercent} %)
+      </p>
+
+      <progress
+        value={tripPackedCount}
+        max={Math.max(1, tripPlannedCount)}
+        style={{width: '100%'}}
+      />
+
+      {tripPacking.filter(item => item.missing > 0).length > 0 ? (
+        <p>
+          Noch {tripPlannedCount - tripPackedCount} Packstücke fehlen.
+        </p>
+      ) : tripPlannedCount > 0 ? (
+        <p>Alles für diese Reise eingepackt!</p>
+      ) : (
+        <p>Für diese Reise sind noch keine Packstücke geplant.</p>
+      )}
+    </>
+  ) : (
+    <p>Lege zuerst im Bereich „Reisen“ eine Reise mit Packliste an.</p>
+  )}
+</section>
+
   <div className="loadingActions">
     <button onClick={loadEverything}>Alles einladen</button>
     <button className="secondary" onClick={unloadTravel}>
