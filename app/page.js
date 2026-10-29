@@ -312,7 +312,48 @@ const tripPackingPercent = tripPlannedCount > 0
   function setTripQty(itemId,value){if(!activeTrip)return;const item=items.find(i=>i.id===itemId);if(!item)return;const q=Math.max(0,Math.min(item.owned,Number(value||0)));setTrips(a=>a.map(t=>t.id===activeTrip.id?{...t,items:{...(t.items||{}),[itemId]:q}}:t))}
   function deleteTrip(id){const t=trips.find(x=>x.id===id);if(t&&confirm(`Reise „${t.name}“ wirklich löschen?`)){setTrips(a=>a.filter(x=>x.id!==id));if(activeTripId===id)setActiveTripId('')}}
   function duplicateTrip(id){const t=trips.find(x=>x.id===id);if(!t)return;const copy={...t,id:uuid(),name:`${t.name} – Kopie`,items:{...(t.items||{})}};setTrips(a=>[...a,copy]);setActiveTripId(copy.id)}
-  function loadTrip(){if(!activeTrip)return;setItems(a=>a.map(i=>i.basic?i:{...i,loaded:Math.max(0,Math.min(i.owned,Number(activeTrip.items?.[i.id]||0))) }))}
+  
+function loadTrip() {
+  if (!activeTrip) {
+    alert('Bitte zuerst eine Reise auswählen.');
+    return;
+  }
+
+  const keepExisting = window.confirm(
+    `Packliste "${activeTrip.name}" einladen?\n\n` +
+    'OK = Bisherige Beladung behalten und fehlende Mengen ergänzen.\n\n' +
+    'Abbrechen = Keine Änderung.'
+  );
+
+  if (!keepExisting) {
+    const replace = window.confirm(
+      'Bisheriges Reisegepäck ersetzen?\n\n' +
+      'OK = Bisheriges Reisegepäck ausladen und neue Reise einladen.\n\n' +
+      'Abbrechen = Keine Änderung.'
+    );
+
+    if (!replace) return;
+  }
+
+  const plannedItems = activeTrip.items || {};
+
+  setItems(previous => previous.map(item => {
+    if (item.basic) return item;
+
+    const planned = Math.max(
+      0,
+      Math.min(Number(item.owned) || 0, Number(plannedItems[item.id]) || 0)
+    );
+
+    return {
+      ...item,
+      loaded: keepExisting
+        ? Math.max(Number(item.loaded) || 0, planned)
+        : planned
+    };
+  }));
+}
+
   function unloadTrip(){setItems(a=>a.map(i=>i.basic?i:{...i,loaded:0}))}
   function planFromCamper(){if(!activeTrip)return;const map={};items.filter(i=>!i.basic).forEach(i=>{map[i.id]=i.loaded});updateTrip(activeTrip.id,{items:map})}
 
@@ -562,7 +603,15 @@ function handleMobileTouchEnd(e) {
 </section>
 
   <div className="loadingActions">
-    <button onClick={loadEverything}>Alles einladen</button>
+    
+<button
+  type="button"
+  onClick={loadTrip}
+  disabled={!activeTrip || tripPlannedCount === 0}
+>
+  Komplette Reise einladen
+</button>
+
     <button className="secondary" onClick={unloadTravel}>
       Reisegepäck ausladen
     </button>
