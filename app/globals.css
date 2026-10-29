@@ -359,4 +359,26 @@
   }
 }
 
+/* CampWeight – mobile Logo-Größe korrigieren */
+@media (max-width: 700px) {
+  .shell .mobileBrand {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    margin: 0 0 12px;
+  }
+
+  .shell .mobileBrandLogo {
+    display: block;
+    width: 120px;
+    max-width: 120px;
+    height: auto;
+  }
+
+  .shell .content {
+    padding-top: 18px;
+  }
+}
+
 
