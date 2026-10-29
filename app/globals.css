@@ -381,4 +381,23 @@
   }
 }
 
+/* CampWeight – mobile Wisch-Navigation */
+@media (max-width: 700px) {
+  .shell aside nav {
+    scroll-behavior: smooth;
+    overscroll-behavior-x: contain;
+    touch-action: pan-x;
+  }
+
+  .shell aside nav button {
+    min-height: 48px;
+    flex-shrink: 0;
+  }
+
+  .shell aside nav button.active {
+    background: var(--green);
+    color: #fff;
+  }
+}
+
 
