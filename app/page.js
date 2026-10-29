@@ -9,7 +9,7 @@ import {supabase} from '../lib/supabase';
 const KEY='campweight-s2'; // bewusst gleich: vorhandene Sprint-2-Daten bleiben erhalten
 const initial={
   camper:{mode:'caravan',name:'Mein Camper',baseWeight:1320,maxWeight:1700},
-  tow:{name:'',maxWeight:'',brakedLimit:'',unbrakedLimit:'',noseLimit:'',trailerBraked:true},
+  tow:{name:'',maxWeight:'',brakedLimit:'',unbrakeconst lastCloudSnapshot=useRef('');dLimit:'',noseLimit:'',trailerBraked:true},
   license:{class:'B96'},
   trips:[],
   items:[
@@ -59,7 +59,28 @@ const [loadingFilter,setLoadingFilter]=useState('all');
   const syncQueue=useRef(Promise.resolve());
   const cloudItemIds=useRef([]),cloudTripIds=useRef([]),cloudTowId=useRef(null);
   const lastCloudSnapshot=useRef('');
+  
+useEffect(() => {
+  const navElement = mobileNavRef.current;
+  if (!navElement) return;
 
+  const activeButton = navElement.querySelector('button.active');
+  if (!activeButton) return;
+
+  const targetLeft =
+    activeButton.offsetLeft -
+    navElement.offsetLeft -
+    (navElement.clientWidth - activeButton.offsetWidth) / 2;
+
+  navElement.scrollTo({
+    left: Math.max(0, targetLeft),
+    behavior: 'smooth'
+  });
+}, [tab, camper.mode, ready, cloudChecked, needsSetup]);
+
+const mobileSwipeStart=useRef(null);
+const mobileNavRef=useRef(null);
+  
   useEffect(()=>{
     try{
       const x=JSON.parse(localStorage.getItem(KEY)||'null');
@@ -288,15 +309,76 @@ if(savedTow)cloudTowId.current=savedTow.id;
   const nav=[['dashboard','Dashboard'],['camper','Mein Camper'],['inventory','Inventar'],['basic','Grundausstattung'],['trips','Reisen'],['loading','Beladung']];
   if(camper.mode==='caravan')nav.push(['tow','Zugfahrzeug']);
   nav.push(['license','Führerschein-Check']);
+                               
+function handleMobileTouchStart(e) {
+  if (!window.matchMedia('(max-width: 700px)').matches) return;
+  if (e.touches.length !== 1) return;
+
+  if (e.target.closest(
+    '.loadingItem, .table, input, select, textarea, button, a, [role="slider"], [contenteditable="true"]'
+  )) {
+    mobileSwipeStart.current = null;
+    return;
+  }
+
+  mobileSwipeStart.current = {
+    x: e.touches[0].clientX,
+    y: e.touches[0].clientY
+  };
+}
+
+function handleMobileTouchEnd(e) {
+  const start = mobileSwipeStart.current;
+  mobileSwipeStart.current = null;
+
+  if (!start || !window.matchMedia('(max-width: 700px)').matches) return;
+
+  const dx = e.changedTouches[0].clientX - start.x;
+  const dy = e.changedTouches[0].clientY - start.y;
+
+  if (Math.abs(dx) < 85 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+  if (start.x < 25 && dx > 0) return;
+
+  const currentIndex = nav.findIndex(([id]) => id === tab);
+  const nextIndex = currentIndex + (dx < 0 ? 1 : -1);
+
+  if (nextIndex < 0 || nextIndex >= nav.length) return;
+
+  setTab(nav[nextIndex][0]);
+  window.scrollTo({ top: 0, behavior: 'auto' });
+}
+
 
   return <div className='shell'>
     <aside>
       <div className='brand'><img className='brandLogo' src='/campweight-logo.png' alt='CampWeight – Pack smart. Travel safe.'/></div>
-      <nav>{nav.map(([id,l])=><button key={id} className={tab===id?'active':''} onClick={()=>setTab(id)}>{l}</button>)}</nav>
+      
+<nav ref={mobileNavRef}>
+  {nav.map(([id, label]) => (
+    <button
+      key={id}
+      type="button"
+      className={tab === id ? 'active' : ''}
+      onClick={() => setTab(id)}
+    >
+      {label}
+    </button>
+  ))}
+</nav>
+
       <small>Cloud-Synchronisierung · {cloudStatus}</small>
     </aside>
 
-    <main className='content'>
+    
+<main
+  className="content"
+  onTouchStart={handleMobileTouchStart}
+  onTouchEnd={handleMobileTouchEnd}
+  onTouchCancel={() => {
+    mobileSwipeStart.current = null;
+  }}
+>
+
                     
 <div className="mobileBrand">
   <img
