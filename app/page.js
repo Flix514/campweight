@@ -297,6 +297,14 @@ if(savedTow)cloudTowId.current=savedTow.id;
     </aside>
 
     <main className='content'>
+                    
+<div className="mobileBrand">
+  <img
+    src="/campweight-logo.png"
+    alt="CampWeight"
+    className="mobileBrandLogo"
+  />
+</div>
       <header><div><p>CampWeight · Version 0.2</p><h1>{nav.find(n=>n[0]===tab)?.[1]||'CampWeight'}</h1></div><strong className={`status ${reserve<0?'bad':reserve<50?'warn':'ok'}`}>{reserve<0?`${kg(Math.abs(reserve))} zu viel`:`${kg(reserve)} Reserve`}</strong></header>
 
       {tab==='dashboard'&&<>
