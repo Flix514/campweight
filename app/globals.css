@@ -357,4 +357,27 @@
     font-size: 12px;
     padding: 10px;
   }
+
+/* CampWeight – mobiles Logo oberhalb des Inhalts */
+@media (max-width: 700px) {
+  .shell aside .brand {
+    display: flex !important;
+    position: fixed;
+    top: 10px;
+    left: 14px;
+    z-index: 110;
+    padding: 0 !important;
+  }
+
+  .shell aside .brandLogo {
+    width: 110px;
+    max-width: 110px;
+    border-radius: 10px;
+    padding: 4px;
+  }
+
+  .content {
+    padding-top: 100px;
+  }
 }
+
