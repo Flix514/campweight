@@ -359,6 +359,13 @@
   }
 }
 
+/* Mobiles Logo auf Desktop ausblenden */
+@media (min-width: 701px) {
+  .shell .mobileBrand {
+    display: none !important;
+  }
+}
+
 /* CampWeight – mobile Logo-Größe korrigieren */
 @media (max-width: 700px) {
   .shell .mobileBrand {
