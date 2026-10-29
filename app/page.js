@@ -193,6 +193,36 @@ const mobileNavRef=useRef(null);
   const rearWeight=loaded.filter(i=>['Hinten','Heckträger'].includes(i.position)).reduce((s,i)=>s+i.loaded*i.weight,0);
   const frontWeight=loaded.filter(i=>['Vorne','Deichselkasten'].includes(i.position)).reduce((s,i)=>s+i.loaded*i.weight,0);
   const activeTrip=trips.find(t=>t.id===activeTripId)||trips[0]||null;
+  
+const tripPacking = activeTrip
+  ? Object.entries(activeTrip.items || {})
+      .map(([id, quantity]) => {
+        const item = items.find(i => i.id === id);
+        if (!item) return null;
+
+        const planned = Math.max(0, Number(quantity) || 0);
+        return {
+          ...item,
+          planned,
+          packed: Math.min(planned, Number(item.loaded) || 0),
+          missing: Math.max(0, planned - (Number(item.loaded) || 0))
+        };
+      })
+      .filter(item => item && item.planned > 0)
+  : [];
+
+const tripPlannedCount = tripPacking.reduce(
+  (sum, item) => sum + item.planned, 0
+);
+
+const tripPackedCount = tripPacking.reduce(
+  (sum, item) => sum + item.packed, 0
+);
+
+const tripPackingPercent = tripPlannedCount > 0
+  ? Math.round((tripPackedCount / tripPlannedCount) * 100)
+  : 0;
+
   const travelItems=items.filter(i=>!i.basic);
   const plannedTravelWeight=activeTrip?Object.entries(activeTrip.items||{}).reduce((sum,[id,q])=>{const i=items.find(x=>x.id===id);return sum+(i?Number(q||0)*Number(i.weight||0):0)},0):0;
   const plannedTotal=Number(camper.baseWeight||0)+basicWeight+plannedTravelWeight;
