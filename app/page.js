@@ -352,45 +352,6 @@ function confirmLoadTrip(keepExisting) {
   setShowLoadTripDialog(false);
 }
 
-  if (!activeTrip) {
-    alert('Bitte zuerst eine Reise auswählen.');
-    return;
-  }
-
-  const keepExisting = window.confirm(
-    `Packliste "${activeTrip.name}" einladen?\n\n` +
-    'OK = Bisherige Beladung behalten und fehlende Mengen ergänzen.\n\n' +
-    'Abbrechen = Keine Änderung.'
-  );
-
-  if (!keepExisting) {
-    const replace = window.confirm(
-      'Bisheriges Reisegepäck ersetzen?\n\n' +
-      'OK = Bisheriges Reisegepäck ausladen und neue Reise einladen.\n\n' +
-      'Abbrechen = Keine Änderung.'
-    );
-
-    if (!replace) return;
-  }
-
-  const plannedItems = activeTrip.items || {};
-
-  setItems(previous => previous.map(item => {
-    if (item.basic) return item;
-
-    const planned = Math.max(
-      0,
-      Math.min(Number(item.owned) || 0, Number(plannedItems[item.id]) || 0)
-    );
-
-    return {
-      ...item,
-      loaded: keepExisting
-        ? Math.max(Number(item.loaded) || 0, planned)
-        : planned
-    };
-  }));
-}
 
   function unloadTrip(){setItems(a=>a.map(i=>i.basic?i:{...i,loaded:0}))}
   function planFromCamper(){if(!activeTrip)return;const map={};items.filter(i=>!i.basic).forEach(i=>{map[i.id]=i.loaded});updateTrip(activeTrip.id,{items:map})}
